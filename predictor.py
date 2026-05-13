@@ -355,6 +355,97 @@ def detect_vulnerability_patterns(url: str) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  MODULE A — SUSPICIOUS TLD CHECK
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# TLDs disproportionately used in phishing campaigns (cheap/free registration).
+SUSPICIOUS_TLDS: set[str] = {
+    ".top", ".xyz", ".tk", ".ml", ".ga", ".cf", ".gq",
+    ".buzz", ".club", ".work", ".info", ".icu", ".cam",
+    ".rest", ".surf", ".monster", ".sbs",
+}
+
+
+def check_suspicious_tld(url: str) -> dict:
+    """
+    Flag the URL if its TLD belongs to the known-abused set.
+
+    Returns:
+        {"flagged": bool, "tld": str}
+    """
+    domain = _extract_domain(url)
+    tld = "." + domain.split(".")[-1].lower() if "." in domain else ""
+    return {"flagged": tld in SUSPICIOUS_TLDS, "tld": tld}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  MODULE B — URL COMPLEXITY CHECK
+# ═══════════════════════════════════════════════════════════════════════════════
+
+MAX_SAFE_DOTS   = 5     # more than 5 dots → suspicious subdomain chaining
+MAX_SAFE_LENGTH = 100   # URLs > 100 chars often hide payloads in path/query
+
+
+def check_url_complexity(url: str) -> dict:
+    """
+    Flag URLs that are structurally complex — long length or excessive
+    dot-separated labels — which correlates with phishing infrastructure.
+
+    Returns:
+        {"is_complex": bool, "dot_count": int, "url_length": int, "details": list[str]}
+    """
+    dot_count  = url.count(".")
+    url_length = len(url)
+    details    = []
+
+    if dot_count > MAX_SAFE_DOTS:
+        details.append(f"Excessive dot count ({dot_count}) suggests subdomain chaining.")
+    if url_length > MAX_SAFE_LENGTH:
+        details.append(f"URL length ({url_length} chars) exceeds safe threshold.")
+
+    return {
+        "is_complex": len(details) > 0,
+        "dot_count":  dot_count,
+        "url_length": url_length,
+        "details":    details,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  MODULE C — PHISHING KEYWORD ANALYSIS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Keywords commonly found in credential-harvesting paths.
+PHISHING_KEYWORDS: set[str] = {
+    "login", "signin", "sign-in", "log-in",
+    "verify", "verification", "validate",
+    "update", "upgrade",
+    "account", "myaccount", "my-account",
+    "banking", "secure", "security",
+    "password", "passwd", "credential",
+    "confirm", "suspend", "alert",
+    "wallet", "recover", "unlock",
+}
+
+
+def check_phishing_keywords(url: str) -> dict:
+    """
+    Scan the URL path (everything after the domain) for credential-harvesting
+    keywords that are strongly associated with phishing landing pages.
+
+    Returns:
+        {"found": bool, "matched_keywords": list[str]}
+    """
+    parsed = urlparse(url if "://" in url else f"https://{url}")
+    # Examine the path + query (lowercased) for keyword presence
+    search_area = (parsed.path + "?" + parsed.query).lower() if parsed.query \
+        else parsed.path.lower()
+
+    matched = [kw for kw in PHISHING_KEYWORDS if kw in search_area]
+    return {"found": len(matched) > 0, "matched_keywords": sorted(set(matched))}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  UNIFIED PREDICTION INTERFACE
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -363,7 +454,7 @@ def predict_url(url: str) -> dict:
     Full prediction pipeline:
 
     0. Trusted-domain fast path (whitelist bypass).
-    1. Run cryptographic / vulnerability pre-screening.
+    1. Run cryptographic / vulnerability / heuristic pre-screening.
     2. Extract ML features and run the trained model.
     3. Merge all results into a single response dict.
 
@@ -378,6 +469,10 @@ def predict_url(url: str) -> dict:
                 "encoded_payloads": {...},
                 "entropy_analysis": {...},
                 "vulnerability_patterns": {...},
+                "typosquatting": {...},
+                "suspicious_tld": {...},
+                "url_complexity": {...},
+                "phishing_keywords": {...},
                 "threat_flags": [str, ...]
             }
         }
@@ -395,10 +490,13 @@ def predict_url(url: str) -> dict:
         }
 
     # ── Pre-screening ────────────────────────────────────────────────────
-    encoded  = detect_encoded_payloads(url)
-    entropy  = analyse_query_entropy(url)
-    vulns    = detect_vulnerability_patterns(url)
-    typo     = detect_typosquatting(url)
+    encoded    = detect_encoded_payloads(url)
+    entropy    = analyse_query_entropy(url)
+    vulns      = detect_vulnerability_patterns(url)
+    typo       = detect_typosquatting(url)
+    tld_check  = check_suspicious_tld(url)
+    complexity = check_url_complexity(url)
+    keywords   = check_phishing_keywords(url)
 
     threat_flags = []
     if encoded["base64_found"]:
@@ -411,6 +509,12 @@ def predict_url(url: str) -> dict:
         threat_flags.append(f"Vulnerability pattern: {category.replace('_', ' ')}")
     if typo["is_typosquat"]:
         threat_flags.append(f"Typosquatting: domain resembles {typo['matched_brand']}")
+    if tld_check["flagged"]:
+        threat_flags.append(f"Suspicious TLD: {tld_check['tld']}")
+    if complexity["is_complex"]:
+        threat_flags.append("URL structural complexity exceeded safe thresholds")
+    if keywords["found"]:
+        threat_flags.append(f"Phishing keywords in path: {', '.join(keywords['matched_keywords'])}")
 
     # ── ML Inference ─────────────────────────────────────────────────────
     X = extract_features(url)
@@ -428,6 +532,16 @@ def predict_url(url: str) -> dict:
         label = 1
         confidence = max(confidence, 0.85)
 
+    # Suspicious TLD + any other flag → force malicious
+    if tld_check["flagged"] and len(threat_flags) >= 2:
+        label = 1
+        confidence = max(confidence, 0.75)
+
+    # Phishing keywords in path → increase malicious weight
+    if keywords["found"] and label == 0 and len(threat_flags) >= 1:
+        label = 1
+        confidence = max(confidence, 0.72)
+
     verdict = "benign" if label == 0 else "malicious"
 
     # ── Confidence cap: never say 100% benign with query parameters ──────
@@ -435,26 +549,53 @@ def predict_url(url: str) -> dict:
     if label == 0 and parsed_url.query:
         confidence = min(confidence, 0.80)
 
-    # ── Build detection reason ───────────────────────────────────────────
+    # ── Build detection reason (priority order) ──────────────────────────
     reasons = []
 
-    # Typosquatting reason takes top priority
+    # 1. Typosquatting — highest priority
     if typo["is_typosquat"]:
         reasons.append(
             f"Visual Deception: This domain is highly similar to "
             f"{typo['matched_brand']}, suggesting a typosquatting attack."
         )
 
+    # 2. Suspicious TLD
+    if tld_check["flagged"]:
+        reasons.append(
+            f"Risky TLD: The domain uses '{tld_check['tld']}', a top-level domain "
+            f"frequently associated with phishing campaigns."
+        )
+
+    # 3. Phishing keywords
+    if keywords["found"]:
+        kw_list = ", ".join(keywords["matched_keywords"])
+        reasons.append(
+            f"Credential-harvesting keywords detected in URL path: {kw_list}."
+        )
+
+    # 4. URL complexity
+    if complexity["is_complex"]:
+        reasons.extend(complexity["details"])
+
+    # 5. Encoded payloads
     if encoded["base64_found"]:
         reasons.append("Encoded cryptographic payload detected in URL parameters.")
     if encoded["hex_found"]:
         reasons.append("Hex-encoded byte sequence found in URL.")
+
+    # 6. Entropy anomaly
     if entropy["high_entropy"]:
-        reasons.append(f"Abnormally high entropy ({entropy['query_entropy']} bits) in query string suggests obfuscated data.")
+        reasons.append(
+            f"Abnormally high entropy ({entropy['query_entropy']} bits) in "
+            f"query string suggests obfuscated data."
+        )
+
+    # 7. Vulnerability patterns
     for category in vulns:
         readable = category.replace("_", " ").title()
         reasons.append(f"Vulnerability pattern detected: {readable}.")
 
+    # 8. Fallback — only if no specific findings surfaced
     if not reasons:
         if label == 1:
             reasons.append("Model detected structural patterns common in phishing sites.")
@@ -474,6 +615,9 @@ def predict_url(url: str) -> dict:
             "entropy_analysis":       entropy,
             "vulnerability_patterns": vulns,
             "typosquatting":          typo,
+            "suspicious_tld":         tld_check,
+            "url_complexity":         complexity,
+            "phishing_keywords":      keywords,
             "threat_flags":           threat_flags,
         },
     }
