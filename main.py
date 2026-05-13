@@ -10,7 +10,7 @@ Endpoints:
     GET  /health    — readiness probe
 """
 
-from typing import Union
+from typing import Optional, Union
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,10 +54,17 @@ class EntropyAnalysis(BaseModel):
     param_details: dict
 
 
+class TyposquattingResult(BaseModel):
+    is_typosquat: bool
+    matched_brand: Optional[str]
+    edit_distance: Optional[int]
+
+
 class SecurityAnalysis(BaseModel):
     encoded_payloads: EncodedPayloads
     entropy_analysis: EntropyAnalysis
     vulnerability_patterns: dict
+    typosquatting: TyposquattingResult
     threat_flags: list[str]
 
 

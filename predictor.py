@@ -100,6 +100,91 @@ def is_trusted_domain(url: str) -> bool:
 
 # ── Feature Extraction (mirrors feature_extractor.py) ────────────────────────
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  BRAND FUZZY MATCHING  (Typosquatting Detection)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Maps brand keywords (lowercase) to their official registrable domains.
+# If a URL's domain is within edit-distance 1-2 of a brand keyword but
+# does NOT belong to the official domain, it is flagged as typosquatting.
+BRAND_MAP: dict[str, str] = {
+    "microsoft":   "microsoft.com",
+    "amazon":      "amazon.com",
+    "apple":       "apple.com",
+    "google":      "google.com",
+    "facebook":    "facebook.com",
+    "instagram":   "instagram.com",
+    "netflix":     "netflix.com",
+    "paypal":      "paypal.com",
+    "linkedin":    "linkedin.com",
+    "twitter":     "twitter.com",
+    "dropbox":     "dropbox.com",
+    "github":      "github.com",
+    "spotify":     "spotify.com",
+    "adobe":       "adobe.com",
+    "yahoo":       "yahoo.com",
+    "chase":       "chase.com",
+    "wellsfargo":  "wellsfargo.com",
+    "bankofamerica": "bankofamerica.com",
+    "ebay":        "ebay.com",
+    "walmart":     "walmart.com",
+}
+
+
+def _levenshtein(s: str, t: str) -> int:
+    """Compute the Levenshtein edit distance between two strings."""
+    if len(s) < len(t):
+        return _levenshtein(t, s)
+    if not t:
+        return len(s)
+    prev = list(range(len(t) + 1))
+    for i, cs in enumerate(s):
+        curr = [i + 1]
+        for j, ct in enumerate(t):
+            curr.append(min(
+                prev[j + 1] + 1,       # deletion
+                curr[j] + 1,           # insertion
+                prev[j] + (cs != ct),  # substitution
+            ))
+        prev = curr
+    return prev[-1]
+
+
+def detect_typosquatting(url: str) -> dict:
+    """
+    Check if the URL's domain is a near-match (edit distance ≤ 2) for any
+    known brand but is NOT the brand's official domain.
+
+    Returns:
+        {
+            "is_typosquat": bool,
+            "matched_brand": str | None,
+            "edit_distance": int | None,
+        }
+    """
+    domain = _extract_domain(url)
+    # Strip TLD to compare just the brand-name portion (e.g. "amaz0n")
+    domain_label = domain.split(".")[0].lower()
+
+    for brand, official in BRAND_MAP.items():
+        dist = _levenshtein(domain_label, brand)
+        if 0 < dist <= 2 and domain != official:
+            return {
+                "is_typosquat":  True,
+                "matched_brand": brand.title(),
+                "edit_distance": dist,
+            }
+        # Exact brand name but wrong TLD (e.g. microsoft.xyz)
+        if dist == 0 and domain != official:
+            return {
+                "is_typosquat":  True,
+                "matched_brand": brand.title(),
+                "edit_distance": 0,
+            }
+
+    return {"is_typosquat": False, "matched_brand": None, "edit_distance": None}
+
 def extract_features(url: str) -> pd.DataFrame:
     """Extract the 10 ML features from a raw URL string."""
     feats = {
@@ -123,13 +208,13 @@ def extract_features(url: str) -> pd.DataFrame:
 
 # ── 1. Base64 / Hex Encoded Payload Detection ────────────────────────────────
 
-# Regex for Base64 strings: 16+ chars from the Base64 alphabet ending with
-# optional padding.  Minimum length avoids false-positives on short tokens.
-_BASE64_RE = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
+# Regex for Base64 strings: 8+ chars from the Base64 alphabet ending with
+# optional padding.  Lowered from 16 to catch short payloads like PHNjcmlwdD4=.
+_BASE64_RE = re.compile(r"[A-Za-z0-9+/]{8,}={0,2}")
 
 # Regex for hex-encoded byte strings (e.g. \x41\x42 or 0x4142 or %41%42)
 _HEX_ESCAPE_RE  = re.compile(r"(\\x[0-9a-fA-F]{2}){4,}")
-_HEX_PERCENT_RE = re.compile(r"(%[0-9a-fA-F]{2}){4,}")
+_HEX_PERCENT_RE = re.compile(r"(%[0-9a-fA-F]{2}){2,}")   # lowered from 4 to 2
 _HEX_0X_RE      = re.compile(r"0x[0-9a-fA-F]{8,}")
 
 
@@ -308,6 +393,7 @@ def predict_url(url: str) -> dict:
     encoded  = detect_encoded_payloads(url)
     entropy  = analyse_query_entropy(url)
     vulns    = detect_vulnerability_patterns(url)
+    typo     = detect_typosquatting(url)
 
     threat_flags = []
     if encoded["base64_found"]:
@@ -318,6 +404,8 @@ def predict_url(url: str) -> dict:
         threat_flags.append(f"High query-string entropy ({entropy['query_entropy']} bits)")
     for category in vulns:
         threat_flags.append(f"Vulnerability pattern: {category.replace('_', ' ')}")
+    if typo["is_typosquat"]:
+        threat_flags.append(f"Typosquatting: domain resembles {typo['matched_brand']}")
 
     # ── ML Inference ─────────────────────────────────────────────────────
     X = extract_features(url)
@@ -330,10 +418,28 @@ def predict_url(url: str) -> dict:
         label = 1
         confidence = max(confidence, 0.70)
 
+    # Typosquatting always forces malicious — regardless of ML score
+    if typo["is_typosquat"]:
+        label = 1
+        confidence = max(confidence, 0.85)
+
     verdict = "benign" if label == 0 else "malicious"
+
+    # ── Confidence cap: never say 100% benign with query parameters ──────
+    parsed_url = urlparse(url)
+    if label == 0 and parsed_url.query:
+        confidence = min(confidence, 0.80)
 
     # ── Build detection reason ───────────────────────────────────────────
     reasons = []
+
+    # Typosquatting reason takes top priority
+    if typo["is_typosquat"]:
+        reasons.append(
+            f"Visual Deception: This domain is highly similar to "
+            f"{typo['matched_brand']}, suggesting a typosquatting attack."
+        )
+
     if encoded["base64_found"]:
         reasons.append("Encoded cryptographic payload detected in URL parameters.")
     if encoded["hex_found"]:
@@ -362,6 +468,7 @@ def predict_url(url: str) -> dict:
             "encoded_payloads":       encoded,
             "entropy_analysis":       entropy,
             "vulnerability_patterns": vulns,
+            "typosquatting":          typo,
             "threat_flags":           threat_flags,
         },
     }
