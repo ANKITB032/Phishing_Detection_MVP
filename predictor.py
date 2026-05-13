@@ -14,6 +14,7 @@ Pipeline order:
 import re
 import math
 import base64
+import binascii
 import joblib
 import os
 import pandas as pd
@@ -239,11 +240,15 @@ def detect_encoded_payloads(url: str) -> dict:
     # Validate Base64 candidates by attempting decode
     verified_b64 = []
     for candidate in base64_matches:
-        padded = candidate + "=" * (-len(candidate) % 4)
-        decoded = base64.b64decode(padded, validate=True)
-        # Only flag if decoded bytes look like printable ASCII (payload text)
-        if decoded and sum(32 <= b < 127 for b in decoded) / len(decoded) > 0.7:
-            verified_b64.append(candidate[:40] + ("…" if len(candidate) > 40 else ""))
+        try:
+            padded = candidate + "=" * (-len(candidate) % 4)
+            decoded = base64.b64decode(padded)
+            # Only flag if decoded bytes look like printable ASCII (payload text)
+            if decoded and sum(32 <= b < 127 for b in decoded) / len(decoded) > 0.7:
+                verified_b64.append(candidate[:40] + ("…" if len(candidate) > 40 else ""))
+        except (binascii.Error, ValueError):
+            # Not valid Base64 — skip silently
+            continue
 
     return {
         "base64_found":    len(verified_b64) > 0,
