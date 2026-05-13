@@ -66,6 +66,7 @@ class PredictionResponse(BaseModel):
     label: int
     verdict: str
     confidence: float
+    reason: str
     security_analysis: Union[SecurityAnalysis, str]
 
 

@@ -283,6 +283,7 @@ def predict_url(url: str) -> dict:
             "label":      0 | 1,
             "verdict":    "benign" | "malicious",
             "confidence": float (0-100),
+            "reason":     str,
             "security_analysis": {
                 "encoded_payloads": {...},
                 "entropy_analysis": {...},
@@ -293,11 +294,13 @@ def predict_url(url: str) -> dict:
     """
     # ── Step 0: Trusted-domain fast path ──────────────────────────────────
     if is_trusted_domain(url):
+        domain = _extract_domain(url)
         return {
             "url":        url,
             "label":      0,
             "verdict":    "benign",
             "confidence": 100.0,
+            "reason":     f"Trusted domain ({domain}) — bypassed via whitelist.",
             "security_analysis": "Bypassed via trusted domain whitelist",
         }
 
@@ -329,11 +332,32 @@ def predict_url(url: str) -> dict:
 
     verdict = "benign" if label == 0 else "malicious"
 
+    # ── Build detection reason ───────────────────────────────────────────
+    reasons = []
+    if encoded["base64_found"]:
+        reasons.append("Encoded cryptographic payload detected in URL parameters.")
+    if encoded["hex_found"]:
+        reasons.append("Hex-encoded byte sequence found in URL.")
+    if entropy["high_entropy"]:
+        reasons.append(f"Abnormally high entropy ({entropy['query_entropy']} bits) in query string suggests obfuscated data.")
+    for category in vulns:
+        readable = category.replace("_", " ").title()
+        reasons.append(f"Vulnerability pattern detected: {readable}.")
+
+    if not reasons:
+        if label == 1:
+            reasons.append("Model detected structural patterns common in phishing sites.")
+        else:
+            reasons.append("No suspicious indicators found. URL structure appears benign.")
+
+    reason = " ".join(reasons)
+
     return {
         "url":        url,
         "label":      label,
         "verdict":    verdict,
         "confidence": round(confidence * 100, 2),
+        "reason":     reason,
         "security_analysis": {
             "encoded_payloads":       encoded,
             "entropy_analysis":       entropy,
