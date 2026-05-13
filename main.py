@@ -29,8 +29,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=["*"],  # Allows your Vercel domain to connect
+    allow_credentials=True,
+    allow_methods=["*"],  # CRITICAL: This tells it to accept the OPTIONS preflight
     allow_headers=["*"],
 )
 
