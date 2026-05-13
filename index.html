@@ -243,6 +243,22 @@
       font-family: 'IBM Plex Mono', monospace;
     }
 
+    .verdict-reason {
+      font-size: .75rem;
+      color: var(--text);
+      margin-top: .5rem;
+      font-family: 'IBM Plex Mono', monospace;
+      line-height: 1.5;
+      padding-top: .4rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .verdict-reason::before {
+      content: '› ';
+      color: var(--accent);
+      font-weight: 700;
+    }
+
     .verdict-url {
       font-size: .72rem;
       color: var(--muted);
@@ -299,6 +315,7 @@
           <div>
             <div class="verdict-label" id="verdict-label"></div>
             <div class="verdict-conf" id="verdict-conf"></div>
+            <div class="verdict-reason" id="verdict-reason"></div>
             <div class="verdict-url" id="verdict-url"></div>
           </div>
         </div>
@@ -342,6 +359,7 @@
         $("verdict-icon").textContent = safe ? "✓" : "⚠";
         $("verdict-label").textContent = data.verdict;
         $("verdict-conf").textContent = `Confidence: ${data.confidence}%`;
+        $("verdict-reason").textContent = data.reason || "";
         $("verdict-url").textContent = data.url;
         $("result").style.display = "block";
 
