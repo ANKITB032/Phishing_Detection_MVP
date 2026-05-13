@@ -175,6 +175,19 @@
       transform: none;
     }
 
+    /* scanning pulse animation */
+    button.scanning {
+      opacity: 1 !important;
+      animation: btnPulse 1.4s ease-in-out infinite;
+      background: linear-gradient(135deg, var(--accent), #007cf0);
+      box-shadow: 0 0 18px rgba(0, 229, 255, .3);
+    }
+
+    @keyframes btnPulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 12px rgba(0, 229, 255, .2); }
+      50%      { transform: scale(1.06); box-shadow: 0 0 24px rgba(0, 229, 255, .5); }
+    }
+
     /* result */
     #result {
       margin-top: 1.5rem;
@@ -188,31 +201,33 @@
       display: flex;
       align-items: center;
       gap: 1.25rem;
-      animation: fadeIn .3s ease;
+      /* initial state for anime.js spring — set via JS */
+      opacity: 0;
+      transform: translateY(30px) scale(.96);
     }
 
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(6px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
+    /* breathing glow — safe */
     .result-inner.safe {
       border-color: var(--safe);
       background: rgba(0, 230, 118, .05);
-      box-shadow: var(--glow-safe);
+      animation: glowSafe 2.4s ease-in-out infinite;
     }
 
+    @keyframes glowSafe {
+      0%, 100% { box-shadow: 0 0 16px rgba(0, 230, 118, .2); }
+      50%      { box-shadow: 0 0 32px rgba(0, 230, 118, .45); }
+    }
+
+    /* breathing glow — danger */
     .result-inner.danger {
       border-color: var(--danger);
       background: rgba(255, 59, 92, .05);
-      box-shadow: var(--glow-danger);
+      animation: glowDanger 2.4s ease-in-out infinite;
+    }
+
+    @keyframes glowDanger {
+      0%, 100% { box-shadow: 0 0 16px rgba(255, 59, 92, .2); }
+      50%      { box-shadow: 0 0 32px rgba(255, 59, 92, .45); }
     }
 
     .verdict-icon {
@@ -251,12 +266,28 @@
       line-height: 1.5;
       padding-top: .4rem;
       border-top: 1px solid var(--border);
+      overflow: hidden;
     }
 
     .verdict-reason::before {
       content: '› ';
       color: var(--accent);
       font-weight: 700;
+    }
+
+    .verdict-reason .typewriter {
+      display: inline;
+      border-right: 2px solid var(--accent);
+      animation: blink .6s step-end infinite;
+    }
+
+    .verdict-reason .typewriter.done {
+      border-right-color: transparent;
+      animation: none;
+    }
+
+    @keyframes blink {
+      50% { border-right-color: transparent; }
     }
 
     .verdict-url {
@@ -325,23 +356,67 @@
     <footer>PhishGuard MVP &mdash; Random Forest · 91% accuracy · ROC-AUC 0.96</footer>
   </div>
 
+  <!-- Anime.js v3 — lightweight (17 KB), vanilla JS, spring physics -->
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.2/lib/anime.min.js"></script>
+
   <script>
-    const API = "https://ab2403-phishing-detection-mvp.hf.space/predict";   // same-origin on Vercel; change to full URL for local dev
+    const API = "https://ab2403-phishing-detection-mvp.hf.space/predict";
 
     const $ = id => document.getElementById(id);
+    let scanAnim = null;   // track running button animation
+    let typeTimer = null;  // track typewriter interval
 
     $("url-input").addEventListener("keydown", e => {
       if (e.key === "Enter") scan();
     });
 
+    /* ── Typewriter effect ─────────────────────────────────── */
+    function typewrite(el, text, speed = 22) {
+      clearInterval(typeTimer);
+      el.innerHTML = '<span class="typewriter"></span>';
+      const cursor = el.querySelector(".typewriter");
+      let i = 0;
+      typeTimer = setInterval(() => {
+        if (i < text.length) {
+          cursor.textContent += text[i++];
+        } else {
+          clearInterval(typeTimer);
+          cursor.classList.add("done");
+        }
+      }, speed);
+    }
+
+    /* ── Spring-in animation for result card ───────────────── */
+    function springIn(el) {
+      // Reset to start state
+      el.style.opacity = 0;
+      el.style.transform = "translateY(30px) scale(.96)";
+
+      anime({
+        targets: el,
+        translateY: [30, 0],
+        scale: [0.96, 1],
+        opacity: [0, 1],
+        duration: 800,
+        easing: "spring(1, 80, 12, 0)",   // mass, stiffness, damping, velocity
+      });
+    }
+
+    /* ── Main scan function ────────────────────────────────── */
     async function scan() {
       const url = $("url-input").value.trim();
       if (!url) return;
 
+      // Reset previous state
       $("error").style.display = "none";
       $("result").style.display = "none";
-      $("scan-btn").disabled = true;
-      $("scan-btn").textContent = "Scanning…";
+      clearInterval(typeTimer);
+
+      // Button → scanning state with pulse
+      const btn = $("scan-btn");
+      btn.disabled = true;
+      btn.textContent = "Scanning…";
+      btn.classList.add("scanning");
 
       try {
         const res = await fetch(API, {
@@ -355,20 +430,30 @@
         const data = await res.json();
         const safe = data.label === 0;
 
-        $("result-inner").className = "result-inner " + (safe ? "safe" : "danger");
+        // Populate content (before making visible)
+        const inner = $("result-inner");
+        inner.className = "result-inner " + (safe ? "safe" : "danger");
         $("verdict-icon").textContent = safe ? "✓" : "⚠";
         $("verdict-label").textContent = data.verdict;
         $("verdict-conf").textContent = `Confidence: ${data.confidence}%`;
-        $("verdict-reason").textContent = data.reason || "";
         $("verdict-url").textContent = data.url;
+
+        // Show container, then spring-in the card
         $("result").style.display = "block";
+        springIn(inner);
+
+        // Typewriter the detection reason (starts after card lands)
+        const reason = data.reason || "";
+        $("verdict-reason").innerHTML = "";
+        setTimeout(() => typewrite($("verdict-reason"), reason), 500);
 
       } catch (err) {
         $("error").textContent = "Error: " + err.message;
         $("error").style.display = "block";
       } finally {
-        $("scan-btn").disabled = false;
-        $("scan-btn").textContent = "Scan";
+        btn.disabled = false;
+        btn.textContent = "Scan";
+        btn.classList.remove("scanning");
       }
     }
   </script>
