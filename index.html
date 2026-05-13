@@ -1,26 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PhishGuard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@300;400;600&display=swap"
+    rel="stylesheet" />
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
     :root {
-      --bg:        #080c10;
-      --surface:   #0d1117;
-      --border:    #1e2d3d;
-      --accent:    #00e5ff;
-      --danger:    #ff3b5c;
-      --safe:      #00e676;
-      --muted:     #4a6070;
-      --text:      #c9d8e3;
-      --text-dim:  #546e7a;
-      --glow-safe: 0 0 24px rgba(0,230,118,.35);
-      --glow-danger: 0 0 24px rgba(255,59,92,.35);
+      --bg: #080c10;
+      --surface: #0d1117;
+      --border: #1e2d3d;
+      --accent: #00e5ff;
+      --danger: #ff3b5c;
+      --safe: #00e676;
+      --muted: #4a6070;
+      --text: #c9d8e3;
+      --text-dim: #546e7a;
+      --glow-safe: 0 0 24px rgba(0, 230, 118, .35);
+      --glow-danger: 0 0 24px rgba(255, 59, 92, .35);
     }
 
     body {
@@ -42,8 +51,8 @@
       position: fixed;
       inset: 0;
       background-image:
-        linear-gradient(rgba(0,229,255,.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,229,255,.03) 1px, transparent 1px);
+        linear-gradient(rgba(0, 229, 255, .03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, .03) 1px, transparent 1px);
       background-size: 40px 40px;
       pointer-events: none;
       z-index: 0;
@@ -81,7 +90,9 @@
       letter-spacing: -.02em;
     }
 
-    h1 span { color: var(--accent); }
+    h1 span {
+      color: var(--accent);
+    }
 
     .subtitle {
       margin-top: .75rem;
@@ -126,8 +137,13 @@
       transition: border-color .2s;
     }
 
-    input[type="text"]::placeholder { color: var(--text-dim); }
-    input[type="text"]:focus { border-color: var(--accent); }
+    input[type="text"]::placeholder {
+      color: var(--text-dim);
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
 
     button {
       background: var(--accent);
@@ -145,9 +161,19 @@
       white-space: nowrap;
     }
 
-    button:hover { opacity: .85; }
-    button:active { transform: scale(.97); }
-    button:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+    button:hover {
+      opacity: .85;
+    }
+
+    button:active {
+      transform: scale(.97);
+    }
+
+    button:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+      transform: none;
+    }
 
     /* result */
     #result {
@@ -166,19 +192,26 @@
     }
 
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to   { opacity: 1; transform: translateY(0); }
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .result-inner.safe {
       border-color: var(--safe);
-      background: rgba(0,230,118,.05);
+      background: rgba(0, 230, 118, .05);
       box-shadow: var(--glow-safe);
     }
 
     .result-inner.danger {
       border-color: var(--danger);
-      background: rgba(255,59,92,.05);
+      background: rgba(255, 59, 92, .05);
       box-shadow: var(--glow-danger);
     }
 
@@ -195,8 +228,13 @@
       letter-spacing: .04em;
     }
 
-    .safe  .verdict-label { color: var(--safe); }
-    .danger .verdict-label { color: var(--danger); }
+    .safe .verdict-label {
+      color: var(--safe);
+    }
+
+    .danger .verdict-label {
+      color: var(--danger);
+    }
 
     .verdict-conf {
       font-size: .78rem;
@@ -221,9 +259,9 @@
       font-size: .78rem;
       color: var(--danger);
       padding: .6rem 1rem;
-      border: 1px solid rgba(255,59,92,.3);
+      border: 1px solid rgba(255, 59, 92, .3);
       border-radius: 4px;
-      background: rgba(255,59,92,.05);
+      background: rgba(255, 59, 92, .05);
     }
 
     footer {
@@ -236,6 +274,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="wrap">
     <header>
@@ -247,13 +286,8 @@
     <div class="card">
       <label class="field-label" for="url-input">Target URL</label>
       <div class="input-row">
-        <input
-          id="url-input"
-          type="text"
-          placeholder="https://example.com/path?q=1"
-          autocomplete="off"
-          spellcheck="false"
-        />
+        <input id="url-input" type="text" placeholder="https://example.com/path?q=1" autocomplete="off"
+          spellcheck="false" />
         <button id="scan-btn" onclick="scan()">Scan</button>
       </div>
 
@@ -264,8 +298,8 @@
           <div class="verdict-icon" id="verdict-icon"></div>
           <div>
             <div class="verdict-label" id="verdict-label"></div>
-            <div class="verdict-conf"  id="verdict-conf"></div>
-            <div class="verdict-url"   id="verdict-url"></div>
+            <div class="verdict-conf" id="verdict-conf"></div>
+            <div class="verdict-url" id="verdict-url"></div>
           </div>
         </div>
       </div>
@@ -275,7 +309,7 @@
   </div>
 
   <script>
-    const API = "/api/predict";   // same-origin on Vercel; change to full URL for local dev
+    const API = "https://ab2403-phishing-detection-mvp.hf.space/predict";   // same-origin on Vercel; change to full URL for local dev
 
     const $ = id => document.getElementById(id);
 
@@ -287,16 +321,16 @@
       const url = $("url-input").value.trim();
       if (!url) return;
 
-      $("error").style.display   = "none";
-      $("result").style.display  = "none";
-      $("scan-btn").disabled     = true;
-      $("scan-btn").textContent  = "Scanning…";
+      $("error").style.display = "none";
+      $("result").style.display = "none";
+      $("scan-btn").disabled = true;
+      $("scan-btn").textContent = "Scanning…";
 
       try {
-        const res  = await fetch(API, {
-          method:  "POST",
+        const res = await fetch(API, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ url }),
+          body: JSON.stringify({ url }),
         });
 
         if (!res.ok) throw new Error(`Server error ${res.status}`);
@@ -305,20 +339,21 @@
         const safe = data.label === 0;
 
         $("result-inner").className = "result-inner " + (safe ? "safe" : "danger");
-        $("verdict-icon").textContent  = safe ? "✓" : "⚠";
+        $("verdict-icon").textContent = safe ? "✓" : "⚠";
         $("verdict-label").textContent = data.verdict;
-        $("verdict-conf").textContent  = `Confidence: ${data.confidence}%`;
-        $("verdict-url").textContent   = data.url;
-        $("result").style.display      = "block";
+        $("verdict-conf").textContent = `Confidence: ${data.confidence}%`;
+        $("verdict-url").textContent = data.url;
+        $("result").style.display = "block";
 
       } catch (err) {
-        $("error").textContent    = "Error: " + err.message;
-        $("error").style.display  = "block";
+        $("error").textContent = "Error: " + err.message;
+        $("error").style.display = "block";
       } finally {
-        $("scan-btn").disabled    = false;
+        $("scan-btn").disabled = false;
         $("scan-btn").textContent = "Scan";
       }
     }
   </script>
 </body>
+
 </html>
