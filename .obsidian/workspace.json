@@ -1,0 +1,204 @@
+{
+  "main": {
+    "id": "c2bb0e33ceafec15",
+    "type": "split",
+    "children": [
+      {
+        "id": "5cbc2eca4a5063ed",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "87c1fa148c90eb7a",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "00_Source_of_Truth.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "00_Source_of_Truth"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "a8f721938ee19646",
+    "type": "split",
+    "children": [
+      {
+        "id": "fdcea0eb9485a7e1",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "a1343a74943656f8",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "3c96ed47559a9dcd",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "ae7d589f5eba1624",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "93bd95036c1651e8",
+    "type": "split",
+    "children": [
+      {
+        "id": "b762dd2da7d936c9",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "5ebea44b7b86d722",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "00_Source_of_Truth.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for 00_Source_of_Truth"
+            }
+          },
+          {
+            "id": "38250273f42719fe",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "00_Source_of_Truth.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from 00_Source_of_Truth"
+            }
+          },
+          {
+            "id": "20f089f6e936ff5a",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "8a9efc986b6cd428",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "5360979931140357",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "00_Source_of_Truth.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of 00_Source_of_Truth"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "a1343a74943656f8",
+  "lastOpenFiles": [
+    "main.py",
+    "main/__init__.py",
+    "main",
+    "requirements.txt",
+    "vercel.json",
+    "index.html",
+    "03_Claude_Checkpoints/Checkpoint_03_Model_Training.md",
+    "03_Claude_Checkpoints/Checkpoint_03_Model_Training",
+    "03_Claude_Checkpoints/Checkpoint_02_Features_Extracted.md",
+    "03_Claude_Checkpoints/Checkpoint_02.md",
+    "03_Claude_Checkpoints/Checkpoint_01_Data_Cleaned.md",
+    "03_Claude_Checkpoints/00_Checkpoint",
+    "04_Saved_Models/phishing_model.joblib",
+    "04_Saved_Models",
+    "New folder"
+  ]
+}

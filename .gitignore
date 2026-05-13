@@ -1,0 +1,8 @@
+# Datasets (too large for version control)
+01_Datasets/
+
+# Python cache
+__pycache__/
+
+# macOS metadata
+.DS_Store

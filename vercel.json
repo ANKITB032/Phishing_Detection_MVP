@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "main.py",
+      "use": "@vercel/python",
+      "config": { "maxLambdaSize": "50mb" }
+    },
+    {
+      "src": "index.html",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    { "src": "/predict", "dest": "main.py" },
+    { "src": "/health",  "dest": "main.py" },
+    { "src": "/(.*)",    "dest": "index.html" }
+  ]
+}
