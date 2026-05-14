@@ -17,8 +17,12 @@ import base64
 import binascii
 import joblib
 import os
+import logging
 import pandas as pd
+import requests
 from urllib.parse import urlparse, parse_qs
+
+logger = logging.getLogger(__name__)
 
 # ── Model Loading ────────────────────────────────────────────────────────────
 
@@ -522,40 +526,73 @@ def check_ipfs_gateway(url: str) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  UNIFIED PREDICTION INTERFACE
+#  MODULE F — URL SHORTENER EXPANSION
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def predict_url(url: str) -> dict:
-    """
-    Full prediction pipeline:
+SHORTENER_DOMAINS: set[str] = {
+    "bit.ly", "t.co", "tinyurl.com", "lnk.ink",
+    "cutt.ly", "t.ly", "goo.gl", "ow.ly",
+    "is.gd", "buff.ly", "rb.gy", "short.io",
+}
 
-    0. Trusted-domain fast path (whitelist bypass).
-    1. Run cryptographic / vulnerability / heuristic pre-screening.
-    2. Extract ML features and run the trained model.
-    3. Merge all results into a single response dict.
+_EXPAND_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+}
+
+
+def is_shortener(url: str) -> bool:
+    """Return True if the URL belongs to a known shortener domain."""
+    return _extract_domain(url) in SHORTENER_DOMAINS
+
+
+def expand_short_url(url: str) -> dict:
+    """
+    Follow redirects on a shortened URL to discover the final destination.
+
+    Uses a HEAD request with a 2-second timeout to avoid hanging on
+    unresponsive hosts.
 
     Returns:
         {
-            "url":        str,
-            "label":      0 | 1,
-            "verdict":    "benign" | "malicious",
-            "confidence": float (0-100),
-            "reason":     str,
-            "security_analysis": {
-                "encoded_payloads": {...},
-                "entropy_analysis": {...},
-                "vulnerability_patterns": {...},
-                "typosquatting": {...},
-                "suspicious_tld": {...},
-                "url_complexity": {...},
-                "phishing_keywords": {...},
-                "threat_flags": [str, ...]
-            }
+            "is_short":     bool,
+            "original_url": str,
+            "expanded_url": str | None,
+            "error":        str | None,
         }
+    """
+    if not is_shortener(url):
+        return {"is_short": False, "original_url": url, "expanded_url": None, "error": None}
+
+    normalized = url if "://" in url else f"https://{url}"
+    try:
+        resp = requests.head(
+            normalized,
+            allow_redirects=True,
+            timeout=2,
+            headers=_EXPAND_HEADERS,
+        )
+        final = resp.url
+        # Guard against redirect loops back to the same shortener
+        if _extract_domain(final) in SHORTENER_DOMAINS:
+            return {"is_short": True, "original_url": url, "expanded_url": final, "error": "Redirect loop"}
+        return {"is_short": True, "original_url": url, "expanded_url": final, "error": None}
+    except requests.RequestException as exc:
+        logger.warning("Shortener expansion failed for %s: %s", url, exc)
+        return {"is_short": True, "original_url": url, "expanded_url": None, "error": str(exc)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  UNIFIED PREDICTION INTERFACE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _analyse_url(url: str) -> dict:
+    """
+    Core analysis engine — runs the full heuristic + ML pipeline on a
+    single URL.  Called directly for normal URLs and recursively for
+    the expanded destination of shortened URLs.
     """
     # ── Step 0: Trusted-domain fast path ──────────────────────────────────
     if is_trusted_domain(url):
-        domain = _extract_domain(url)
         return {
             "url":        url,
             "label":      0,
@@ -601,13 +638,13 @@ def predict_url(url: str) -> dict:
     proba      = _model.predict_proba(X)[0]
     confidence = float(proba[label])
 
-    # ── Heuristic flag counter (A/B/C/D/E modules) ──────────────────────
+    # ── Heuristic flag counter (A-F modules) ─────────────────────────────
     heuristic_count = sum([
-        tld_check["flagged"],       # A — Suspicious TLD
-        keywords["found"],          # B — Phishing keywords
-        complexity["is_complex"],   # C — URL complexity
-        typo["is_typosquat"],       # D — Typosquatting
-        ipfs["is_ipfs"] and not ipfs["whitelisted"],  # E — IPFS gateway
+        typo["is_typosquat"],                          # A — Typosquatting
+        tld_check["flagged"],                          # B — Suspicious TLD
+        keywords["found"],                             # C — Phishing keywords
+        complexity["is_complex"],                      # D — URL complexity
+        ipfs["is_ipfs"] and not ipfs["whitelisted"],   # E — IPFS gateway
     ])
 
     # ── Trust Protocol: ML-malicious but zero heuristic flags → benign ──
@@ -615,27 +652,22 @@ def predict_url(url: str) -> dict:
     if label == 1 and heuristic_count == 0:
         label = 0
         trust_override = True
-        # Use the model's benign-class probability as confidence
         confidence = float(proba[0])
 
     # ── Heuristic escalation (only if NOT trust-overridden) ─────────────
     if not trust_override:
-        # If the pre-screening found threats, escalate a "benign" ML result
         if label == 0 and len(threat_flags) >= 2:
             label = 1
             confidence = max(confidence, 0.70)
 
-        # Typosquatting always forces malicious — regardless of ML score
         if typo["is_typosquat"]:
             label = 1
             confidence = max(confidence, 0.85)
 
-        # Suspicious TLD + any other flag → force malicious
         if tld_check["flagged"] and len(threat_flags) >= 2:
             label = 1
             confidence = max(confidence, 0.75)
 
-        # Phishing keywords in path → increase malicious weight
         if keywords["found"] and label == 0 and len(threat_flags) >= 1:
             label = 1
             confidence = max(confidence, 0.72)
@@ -643,8 +675,8 @@ def predict_url(url: str) -> dict:
     # ── IPFS escalation: overrides Trust Protocol — always malicious ────
     if ipfs["is_ipfs"] and not ipfs["whitelisted"]:
         label = 1
-        trust_override = False          # IPFS nullifies any trust override
-        confidence = min(confidence, 0.65)  # cap at 65%
+        trust_override = False
+        confidence = min(confidence, 0.65)
 
     verdict = "benign" if label == 0 else "malicious"
 
@@ -655,22 +687,18 @@ def predict_url(url: str) -> dict:
 
     # ══════════════════════════════════════════════════════════════════════
     #  REASONING HIERARCHY
-    #  Priority:
-    #    Trust-override  →  Heuristic triggers (A/B/C/D)
-    #    →  Crypto/vuln details  →  Model-patterns fallback
+    #  Trust-override → Heuristics (A-E) → Crypto/vuln → Model fallback
     # ══════════════════════════════════════════════════════════════════════
     reasons = []
 
-    # 0. Trust Protocol override — short-circuit all other reasoning
     if trust_override:
         reasons.append(
             "Matches clean structural profiles. "
             "No deceptive keywords or hidden payloads detected."
         )
 
-    # ── PRIMARY: Heuristic triggers (A, B, C, D, E) ─────────────────────
     if not trust_override:
-        # A — Typosquatting (highest severity)
+        # A — Typosquatting
         if typo["is_typosquat"]:
             reasons.append(
                 f"Visual Deception: This domain is highly similar to "
@@ -684,7 +712,7 @@ def predict_url(url: str) -> dict:
                 f"domain frequently associated with phishing campaigns."
             )
 
-        # C — Phishing keywords  (enriched for OpenPhish path-heavy URLs)
+        # C — Phishing keywords (enriched for OpenPhish)
         if keywords["found"]:
             kw_list = ", ".join(keywords["matched_keywords"])
             parsed_tmp = urlparse(url if "://" in url else f"https://{url}")
@@ -695,7 +723,7 @@ def predict_url(url: str) -> dict:
                 f"{path_seg} path segment(s) at subdomain depth {sub_depth}."
             )
 
-        # D — URL complexity  (enriched with subdomain depth)
+        # D — URL complexity (enriched with subdomain depth)
         if complexity["is_complex"]:
             parsed_tmp = urlparse(url if "://" in url else f"https://{url}")
             sub_depth  = max(0, len((parsed_tmp.hostname or "").split(".")) - 2)
@@ -704,34 +732,29 @@ def predict_url(url: str) -> dict:
 
         # E — IPFS Gateway
         if ipfs["is_ipfs"] and not ipfs["whitelisted"]:
+            cid_preview = f" CID: {ipfs['cid'][:16]}..." if ipfs["cid"] and len(ipfs["cid"]) > 16 else ""
             reasons.append(
                 f"IPFS Gateway detected ({ipfs['gateway']}): "
                 f"Decentralised hosting is frequently used to serve phishing "
-                f"content that bypasses traditional domain filters. "
-                f"CID: {ipfs['cid'][:16]}..." if ipfs["cid"] and len(ipfs["cid"]) > 16
-                else f"IPFS Gateway detected ({ipfs['gateway']}): "
-                f"Decentralised hosting is frequently used to serve phishing "
-                f"content that bypasses traditional domain filters."
+                f"content that bypasses traditional domain filters.{cid_preview}"
             )
 
-    # ── SECONDARY: Crypto / vuln analysis details ───────────────────────
+    # ── SECONDARY: Crypto / vuln details ────────────────────────────────
     if not trust_override:
         if encoded["base64_found"]:
             reasons.append("Encoded cryptographic payload detected in URL parameters.")
         if encoded["hex_found"]:
             reasons.append("Hex-encoded byte sequence found in URL.")
-
         if entropy["high_entropy"]:
             reasons.append(
                 f"Abnormally high entropy ({entropy['query_entropy']} bits) in "
                 f"query string suggests obfuscated data."
             )
-
         for category in vulns:
             readable = category.replace("_", " ").title()
             reasons.append(f"Vulnerability pattern detected: {readable}.")
 
-    # ── FALLBACK: Model patterns (only when nothing else fired) ─────────
+    # ── FALLBACK: Model patterns ────────────────────────────────────────
     if not reasons:
         if label == 1:
             reasons.append(
@@ -764,6 +787,64 @@ def predict_url(url: str) -> dict:
             "ipfs_gateway":           ipfs,
         },
     }
+
+
+def predict_url(url: str) -> dict:
+    """
+    Public prediction interface with URL-shortener expansion (Module F).
+
+    If the URL belongs to a known shortener, it is expanded via HTTP HEAD
+    and the *expanded* URL is recursively analysed through the full pipeline.
+    The result includes both the original and expanded URLs along with the
+    analysis of the final destination.
+    """
+    shortener = expand_short_url(url)
+
+    if shortener["is_short"] and shortener["expanded_url"] and not shortener["error"]:
+        # Analyse the expanded destination
+        expanded = shortener["expanded_url"]
+        result = _analyse_url(expanded)
+
+        # Cap shortener confidence at 70 %
+        if result["confidence"] > 70.0:
+            result["confidence"] = 70.0
+        # Force malicious if destination was also flagged
+        if result["label"] == 0:
+            result["label"] = 1
+            result["verdict"] = "malicious"
+            result["confidence"] = max(result["confidence"], 65.0)
+
+        # Prepend shortener context to reason
+        result["reason"] = (
+            f"URL Shortener ({_extract_domain(url)}): "
+            f"Expanded to {expanded}. " + result["reason"]
+        )
+        # Attach shortener metadata
+        result["url"] = url
+        if isinstance(result["security_analysis"], dict):
+            result["security_analysis"]["shortener_expansion"] = shortener
+        return result
+
+    if shortener["is_short"] and shortener["error"]:
+        # Could not expand — flag as suspicious shortener
+        result = _analyse_url(url)
+        result["label"] = 1
+        result["verdict"] = "malicious"
+        result["confidence"] = max(result["confidence"], 65.0)
+        result["reason"] = (
+            f"URL Shortener ({_extract_domain(url)}): "
+            f"Expansion failed ({shortener['error']}). Treating as suspicious. "
+            + result["reason"]
+        )
+        if isinstance(result["security_analysis"], dict):
+            result["security_analysis"]["shortener_expansion"] = shortener
+        return result
+
+    # Not a shortener — normal analysis
+    result = _analyse_url(url)
+    if isinstance(result["security_analysis"], dict):
+        result["security_analysis"]["shortener_expansion"] = shortener
+    return result
 
 
 # ── CLI entry point ──────────────────────────────────────────────────────────
