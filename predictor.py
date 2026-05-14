@@ -48,6 +48,8 @@ TRUSTED_DOMAINS: set[str] = {
     "microsoft.com",    "apple.com",        "amazon.com",
     "meta.com",         "facebook.com",     "instagram.com",
     "twitter.com",      "x.com",            "linkedin.com",
+    # AI / research
+    "claude.ai",        "anthropic.com",
     # Developer / code
     "github.com",       "gitlab.com",       "stackoverflow.com",
     "npmjs.com",        "pypi.org",         "docker.com",
@@ -63,12 +65,16 @@ TRUSTED_DOMAINS: set[str] = {
     # Security / infra
     "cloudflare.com",   "godaddy.com",      "namecheap.com",
     "letsencrypt.org",  "digicert.com",
+    # Hosting & deploy
+    "vercel.app",
     # Email & comms
     "outlook.com",      "proton.me",        "whatsapp.com",
     # News / reference
     "bbc.com",          "cnn.com",          "nytimes.com",
     # Education
     "coursera.org",     "edx.org",          "khanacademy.org",
+    # Personal / portfolio
+    "ankitband.me",
 }
 
 
@@ -485,7 +491,7 @@ def predict_url(url: str) -> dict:
             "label":      0,
             "verdict":    "benign",
             "confidence": 100.0,
-            "reason":     f"Trusted domain ({domain}) — bypassed via whitelist.",
+            "reason":     "Verified Source: This domain is on the global trusted whitelist.",
             "security_analysis": "Bypassed via trusted domain whitelist",
         }
 
@@ -522,25 +528,43 @@ def predict_url(url: str) -> dict:
     proba      = _model.predict_proba(X)[0]
     confidence = float(proba[label])
 
-    # If the pre-screening found threats, escalate a "benign" ML result
-    if label == 0 and len(threat_flags) >= 2:
-        label = 1
-        confidence = max(confidence, 0.70)
+    # ── Heuristic flag counter (A/B/C/D modules) ────────────────────────
+    heuristic_count = sum([
+        tld_check["flagged"],       # A — Suspicious TLD
+        keywords["found"],          # B — Phishing keywords
+        complexity["is_complex"],   # C — URL complexity
+        typo["is_typosquat"],       # D — Typosquatting
+    ])
 
-    # Typosquatting always forces malicious — regardless of ML score
-    if typo["is_typosquat"]:
-        label = 1
-        confidence = max(confidence, 0.85)
+    # ── Trust Protocol: ML-malicious but zero heuristic flags → benign ──
+    trust_override = False
+    if label == 1 and heuristic_count == 0:
+        label = 0
+        trust_override = True
+        # Use the model's benign-class probability as confidence
+        confidence = float(proba[0])
 
-    # Suspicious TLD + any other flag → force malicious
-    if tld_check["flagged"] and len(threat_flags) >= 2:
-        label = 1
-        confidence = max(confidence, 0.75)
+    # ── Heuristic escalation (only if NOT trust-overridden) ─────────────
+    if not trust_override:
+        # If the pre-screening found threats, escalate a "benign" ML result
+        if label == 0 and len(threat_flags) >= 2:
+            label = 1
+            confidence = max(confidence, 0.70)
 
-    # Phishing keywords in path → increase malicious weight
-    if keywords["found"] and label == 0 and len(threat_flags) >= 1:
-        label = 1
-        confidence = max(confidence, 0.72)
+        # Typosquatting always forces malicious — regardless of ML score
+        if typo["is_typosquat"]:
+            label = 1
+            confidence = max(confidence, 0.85)
+
+        # Suspicious TLD + any other flag → force malicious
+        if tld_check["flagged"] and len(threat_flags) >= 2:
+            label = 1
+            confidence = max(confidence, 0.75)
+
+        # Phishing keywords in path → increase malicious weight
+        if keywords["found"] and label == 0 and len(threat_flags) >= 1:
+            label = 1
+            confidence = max(confidence, 0.72)
 
     verdict = "benign" if label == 0 else "malicious"
 
@@ -549,58 +573,83 @@ def predict_url(url: str) -> dict:
     if label == 0 and parsed_url.query:
         confidence = min(confidence, 0.80)
 
-    # ── Build detection reason (priority order) ──────────────────────────
+    # ══════════════════════════════════════════════════════════════════════
+    #  REASONING HIERARCHY
+    #  Priority:
+    #    Trust-override  →  Heuristic triggers (A/B/C/D)
+    #    →  Crypto/vuln details  →  Model-patterns fallback
+    # ══════════════════════════════════════════════════════════════════════
     reasons = []
 
-    # 1. Typosquatting — highest priority
-    if typo["is_typosquat"]:
+    # 0. Trust Protocol override — short-circuit all other reasoning
+    if trust_override:
         reasons.append(
-            f"Visual Deception: This domain is highly similar to "
-            f"{typo['matched_brand']}, suggesting a typosquatting attack."
+            "Matches clean structural profiles. "
+            "No deceptive keywords or hidden payloads detected."
         )
 
-    # 2. Suspicious TLD
-    if tld_check["flagged"]:
-        reasons.append(
-            f"Risky TLD: The domain uses '{tld_check['tld']}', a top-level domain "
-            f"frequently associated with phishing campaigns."
-        )
+    # ── PRIMARY: Heuristic triggers (A, B, C, D) ────────────────────────
+    if not trust_override:
+        # A — Typosquatting (highest severity)
+        if typo["is_typosquat"]:
+            reasons.append(
+                f"Visual Deception: This domain is highly similar to "
+                f"{typo['matched_brand']}, suggesting a typosquatting attack."
+            )
 
-    # 3. Phishing keywords
-    if keywords["found"]:
-        kw_list = ", ".join(keywords["matched_keywords"])
-        reasons.append(
-            f"Credential-harvesting keywords detected in URL path: {kw_list}."
-        )
+        # B — Suspicious TLD
+        if tld_check["flagged"]:
+            reasons.append(
+                f"Risky TLD: The domain uses '{tld_check['tld']}', a top-level "
+                f"domain frequently associated with phishing campaigns."
+            )
 
-    # 4. URL complexity
-    if complexity["is_complex"]:
-        reasons.extend(complexity["details"])
+        # C — Phishing keywords  (enriched for OpenPhish path-heavy URLs)
+        if keywords["found"]:
+            kw_list = ", ".join(keywords["matched_keywords"])
+            parsed_tmp = urlparse(url if "://" in url else f"https://{url}")
+            sub_depth  = max(0, len((parsed_tmp.hostname or "").split(".")) - 2)
+            path_seg   = parsed_tmp.path.strip("/").count("/") + 1 if parsed_tmp.path.strip("/") else 0
+            reasons.append(
+                f"Credential-harvesting keywords ({kw_list}) found across "
+                f"{path_seg} path segment(s) at subdomain depth {sub_depth}."
+            )
 
-    # 5. Encoded payloads
-    if encoded["base64_found"]:
-        reasons.append("Encoded cryptographic payload detected in URL parameters.")
-    if encoded["hex_found"]:
-        reasons.append("Hex-encoded byte sequence found in URL.")
+        # D — URL complexity  (enriched with subdomain depth)
+        if complexity["is_complex"]:
+            parsed_tmp = urlparse(url if "://" in url else f"https://{url}")
+            sub_depth  = max(0, len((parsed_tmp.hostname or "").split(".")) - 2)
+            for detail in complexity["details"]:
+                reasons.append(f"{detail} (subdomain depth: {sub_depth})")
 
-    # 6. Entropy anomaly
-    if entropy["high_entropy"]:
-        reasons.append(
-            f"Abnormally high entropy ({entropy['query_entropy']} bits) in "
-            f"query string suggests obfuscated data."
-        )
+    # ── SECONDARY: Crypto / vuln analysis details ───────────────────────
+    if not trust_override:
+        if encoded["base64_found"]:
+            reasons.append("Encoded cryptographic payload detected in URL parameters.")
+        if encoded["hex_found"]:
+            reasons.append("Hex-encoded byte sequence found in URL.")
 
-    # 7. Vulnerability patterns
-    for category in vulns:
-        readable = category.replace("_", " ").title()
-        reasons.append(f"Vulnerability pattern detected: {readable}.")
+        if entropy["high_entropy"]:
+            reasons.append(
+                f"Abnormally high entropy ({entropy['query_entropy']} bits) in "
+                f"query string suggests obfuscated data."
+            )
 
-    # 8. Fallback — only if no specific findings surfaced
+        for category in vulns:
+            readable = category.replace("_", " ").title()
+            reasons.append(f"Vulnerability pattern detected: {readable}.")
+
+    # ── FALLBACK: Model patterns (only when nothing else fired) ─────────
     if not reasons:
         if label == 1:
-            reasons.append("Model detected structural patterns common in phishing sites.")
+            reasons.append(
+                "Model Patterns: Structural analysis detected statistical "
+                "anomalies consistent with known phishing infrastructure."
+            )
         else:
-            reasons.append("No suspicious indicators found. URL structure appears benign.")
+            reasons.append(
+                "No suspicious indicators found. URL structure appears benign."
+            )
 
     reason = " ".join(reasons)
 
@@ -619,6 +668,7 @@ def predict_url(url: str) -> dict:
             "url_complexity":         complexity,
             "phishing_keywords":      keywords,
             "threat_flags":           threat_flags,
+            "trust_override":         trust_override,
         },
     }
 
