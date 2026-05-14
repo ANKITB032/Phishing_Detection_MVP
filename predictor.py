@@ -452,6 +452,76 @@ def check_phishing_keywords(url: str) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  MODULE E — IPFS GATEWAY CHECK
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Known public IPFS gateways used to serve decentralised content.
+# Phishing kits are increasingly hosted on IPFS because the content
+# is immutable and cannot be taken down by a single provider.
+IPFS_GATEWAYS: set[str] = {
+    "ipfs.io",
+    "cloudflare-ipfs.com",
+    "pinata.cloud",
+    "gateway.pinata.cloud",
+    "dweb.link",
+    "w3s.link",
+    "nftstorage.link",
+}
+
+# CIDv0 = 46-char base58 starting with Qm; CIDv1 = 59+ char base32/base36
+_IPFS_CID_RE = re.compile(
+    r"(?:/ipfs/|/ipns/)"
+    r"(?P<cid>[A-Za-z0-9]{46,})",
+)
+
+# Optional: hashes that have been manually verified as safe.
+WHITELISTED_IPFS_HASHES: set[str] = set()
+
+
+def check_ipfs_gateway(url: str) -> dict:
+    """
+    Detect whether the URL routes through a known IPFS gateway and
+    contains a long content-addressed hash (CID).
+
+    Returns:
+        {
+            "is_ipfs":   bool,
+            "gateway":   str | None,
+            "cid":       str | None,
+            "whitelisted": bool,
+        }
+    """
+    parsed = urlparse(url if "://" in url else f"https://{url}")
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+
+    # Check if the hostname matches or is a subdomain of a known gateway
+    gateway_match = None
+    for gw in IPFS_GATEWAYS:
+        if hostname == gw or hostname.endswith(f".{gw}"):
+            gateway_match = gw
+            break
+
+    if not gateway_match:
+        return {"is_ipfs": False, "gateway": None, "cid": None, "whitelisted": False}
+
+    # Look for a CID in the path
+    cid_match = _IPFS_CID_RE.search(parsed.path)
+    if not cid_match:
+        # Some gateways use subdomain-style: <cid>.ipfs.<gateway>
+        # e.g. bafybei...ipfs.dweb.link
+        parts = hostname.split(".")
+        if len(parts) >= 3 and len(parts[0]) >= 46:
+            cid = parts[0]
+            is_safe = cid in WHITELISTED_IPFS_HASHES
+            return {"is_ipfs": True, "gateway": gateway_match, "cid": cid, "whitelisted": is_safe}
+        return {"is_ipfs": False, "gateway": gateway_match, "cid": None, "whitelisted": False}
+
+    cid = cid_match.group("cid")
+    is_safe = cid in WHITELISTED_IPFS_HASHES
+    return {"is_ipfs": True, "gateway": gateway_match, "cid": cid, "whitelisted": is_safe}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  UNIFIED PREDICTION INTERFACE
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -503,6 +573,7 @@ def predict_url(url: str) -> dict:
     tld_check  = check_suspicious_tld(url)
     complexity = check_url_complexity(url)
     keywords   = check_phishing_keywords(url)
+    ipfs       = check_ipfs_gateway(url)
 
     threat_flags = []
     if encoded["base64_found"]:
@@ -521,6 +592,8 @@ def predict_url(url: str) -> dict:
         threat_flags.append("URL structural complexity exceeded safe thresholds")
     if keywords["found"]:
         threat_flags.append(f"Phishing keywords in path: {', '.join(keywords['matched_keywords'])}")
+    if ipfs["is_ipfs"] and not ipfs["whitelisted"]:
+        threat_flags.append(f"IPFS gateway detected: {ipfs['gateway']}")
 
     # ── ML Inference ─────────────────────────────────────────────────────
     X = extract_features(url)
@@ -528,12 +601,13 @@ def predict_url(url: str) -> dict:
     proba      = _model.predict_proba(X)[0]
     confidence = float(proba[label])
 
-    # ── Heuristic flag counter (A/B/C/D modules) ────────────────────────
+    # ── Heuristic flag counter (A/B/C/D/E modules) ──────────────────────
     heuristic_count = sum([
         tld_check["flagged"],       # A — Suspicious TLD
         keywords["found"],          # B — Phishing keywords
         complexity["is_complex"],   # C — URL complexity
         typo["is_typosquat"],       # D — Typosquatting
+        ipfs["is_ipfs"] and not ipfs["whitelisted"],  # E — IPFS gateway
     ])
 
     # ── Trust Protocol: ML-malicious but zero heuristic flags → benign ──
@@ -566,6 +640,12 @@ def predict_url(url: str) -> dict:
             label = 1
             confidence = max(confidence, 0.72)
 
+    # ── IPFS escalation: overrides Trust Protocol — always malicious ────
+    if ipfs["is_ipfs"] and not ipfs["whitelisted"]:
+        label = 1
+        trust_override = False          # IPFS nullifies any trust override
+        confidence = min(confidence, 0.65)  # cap at 65%
+
     verdict = "benign" if label == 0 else "malicious"
 
     # ── Confidence cap: never say 100% benign with query parameters ──────
@@ -588,7 +668,7 @@ def predict_url(url: str) -> dict:
             "No deceptive keywords or hidden payloads detected."
         )
 
-    # ── PRIMARY: Heuristic triggers (A, B, C, D) ────────────────────────
+    # ── PRIMARY: Heuristic triggers (A, B, C, D, E) ─────────────────────
     if not trust_override:
         # A — Typosquatting (highest severity)
         if typo["is_typosquat"]:
@@ -621,6 +701,18 @@ def predict_url(url: str) -> dict:
             sub_depth  = max(0, len((parsed_tmp.hostname or "").split(".")) - 2)
             for detail in complexity["details"]:
                 reasons.append(f"{detail} (subdomain depth: {sub_depth})")
+
+        # E — IPFS Gateway
+        if ipfs["is_ipfs"] and not ipfs["whitelisted"]:
+            reasons.append(
+                f"IPFS Gateway detected ({ipfs['gateway']}): "
+                f"Decentralised hosting is frequently used to serve phishing "
+                f"content that bypasses traditional domain filters. "
+                f"CID: {ipfs['cid'][:16]}..." if ipfs["cid"] and len(ipfs["cid"]) > 16
+                else f"IPFS Gateway detected ({ipfs['gateway']}): "
+                f"Decentralised hosting is frequently used to serve phishing "
+                f"content that bypasses traditional domain filters."
+            )
 
     # ── SECONDARY: Crypto / vuln analysis details ───────────────────────
     if not trust_override:
@@ -669,6 +761,7 @@ def predict_url(url: str) -> dict:
             "phishing_keywords":      keywords,
             "threat_flags":           threat_flags,
             "trust_override":         trust_override,
+            "ipfs_gateway":           ipfs,
         },
     }
 
