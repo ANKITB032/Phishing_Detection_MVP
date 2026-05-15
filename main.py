@@ -9,8 +9,7 @@ Endpoints:
     GET  /health    -- readiness probe
 """
 
-from typing import Optional, Union
-from typing import Optional
+from typing import Any, List, Optional, Union
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -107,12 +106,13 @@ class SecurityAnalysis(BaseModel):
 
 
 class PredictionResponse(BaseModel):
-    url: str
-    label: int
-    verdict: str
-    confidence: float
-    reason: str
-    security_analysis: Union[SecurityAnalysis, str]
+    url:                str
+    original_url:       Optional[str]  = None   # set when shortener was expanded
+    label:              int
+    verdict:            str
+    confidence:         float
+    reason:             str
+    security_analysis:  Union[SecurityAnalysis, str]
 
 class InfrastructureAbuse(BaseModel):
     is_abuse: bool
@@ -121,21 +121,23 @@ class InfrastructureAbuse(BaseModel):
     reason: str
 
 class SecurityAnalysis(BaseModel):
-    encoded_payloads: EncodedPayloads
-    entropy_analysis: EntropyAnalysis
-    vulnerability_patterns: dict
-    typosquatting: TyposquattingResult
-    infrastructure_abuse: InfrastructureAbuse
-    threat_flags: list[str]
-    
-    # Make the missing v3.0 modules Optional so the app stops crashing
-    suspicious_tld: Optional[dict] = None
-    url_complexity: Optional[dict] = None
-    phishing_keywords: Optional[dict] = None
-    ipfs_gateway: Optional[dict] = None
-    shortener_expansion: Optional[dict] = None
-    trust_override: Optional[bool] = None
+    model_config = {"extra": "allow"}   # absorbs any future fields silently
 
+    # Core fields — always present
+    threat_flags:            List[str]        = []
+    trust_override:          Optional[bool]   = None
+
+    # Heuristic modules — Optional so a crashed module never 500s
+    encoded_payloads:        Optional[Any]    = None
+    entropy_analysis:        Optional[Any]    = None
+    vulnerability_patterns:  Optional[Any]    = None
+    typosquatting:           Optional[Any]    = None
+    suspicious_tld:          Optional[Any]    = None
+    url_complexity:          Optional[Any]    = None
+    phishing_keywords:       Optional[Any]    = None
+    ipfs_gateway:            Optional[Any]    = None
+    shortener_expansion:     Optional[Any]    = None
+    infrastructure_abuse:    Optional[Any]    = None  # v3.5
 
 # -- Endpoints ----------------------------------------------------------------
 
