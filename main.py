@@ -10,6 +10,7 @@ Endpoints:
 """
 
 from typing import Optional, Union
+from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -124,8 +125,16 @@ class SecurityAnalysis(BaseModel):
     entropy_analysis: EntropyAnalysis
     vulnerability_patterns: dict
     typosquatting: TyposquattingResult
-    infrastructure_abuse: InfrastructureAbuse   # <--- Add this line
+    infrastructure_abuse: InfrastructureAbuse
     threat_flags: list[str]
+    
+    # Make the missing v3.0 modules Optional so the app stops crashing
+    suspicious_tld: Optional[dict] = None
+    url_complexity: Optional[dict] = None
+    phishing_keywords: Optional[dict] = None
+    ipfs_gateway: Optional[dict] = None
+    shortener_expansion: Optional[dict] = None
+    trust_override: Optional[bool] = None
 
 
 # -- Endpoints ----------------------------------------------------------------
