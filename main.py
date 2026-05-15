@@ -113,6 +113,20 @@ class PredictionResponse(BaseModel):
     reason: str
     security_analysis: Union[SecurityAnalysis, str]
 
+class InfrastructureAbuse(BaseModel):
+    is_abuse: bool
+    provider: Optional[str]
+    subdomain: Optional[str]
+    reason: str
+
+class SecurityAnalysis(BaseModel):
+    encoded_payloads: EncodedPayloads
+    entropy_analysis: EntropyAnalysis
+    vulnerability_patterns: dict
+    typosquatting: TyposquattingResult
+    infrastructure_abuse: InfrastructureAbuse   # <--- Add this line
+    threat_flags: list[str]
+
 
 # -- Endpoints ----------------------------------------------------------------
 

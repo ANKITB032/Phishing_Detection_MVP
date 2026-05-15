@@ -28,8 +28,8 @@ SPECIAL_CHARS = "@-?=.#%+&_~/!"
 
 FEATURES = [
     "url_length", "num_special_chars", "num_dots", "num_hyphens",
-    "num_at", "num_query_params", "has_https", "has_ip",
-    "subdomain_depth", "path_depth",
+    "num_at", "num_query_params", "has_https", "subdomain_depth", "path_depth",
+    "is_ip", "path_brand"  # <--- The two new v3.5 features
 ]
 
 
@@ -68,6 +68,9 @@ TRUSTED_DOMAINS: set[str] = {
     "bbc.com",          "cnn.com",          "nytimes.com",
     # Education
     "coursera.org",     "edx.org",          "khanacademy.org",
+    # Custom / Personal
+    "claude.ai",        "anthropic.com",    "ankitband.me",
+    "vercel.app",       "github.com",
 }
 
 
@@ -289,8 +292,28 @@ def detect_typosquatting(url: str) -> dict:
 
     return {"is_typosquat": False, "matched_brand": None, "edit_distance": None}
 
+# Top-20 brand names most commonly spoofed in phishing URL paths
+PATH_BRANDS: list[str] = [
+    "paypal", "microsoft", "apple", "google", "amazon",
+    "facebook", "netflix", "instagram", "linkedin", "twitter",
+    "dropbox", "github", "spotify", "adobe", "yahoo",
+    "chase", "wellsfargo", "bankofamerica", "ebay", "walmart",
+]
+
 def extract_features(url: str) -> pd.DataFrame:
-    """Extract the 10 ML features from a raw URL string."""
+    """Extract the 11 ML features from a raw URL string for v3.5."""
+    try:
+        parsed   = urlparse(url if "://" in url else f"https://{url}")
+        hostname = (parsed.hostname or "").lower()
+        path     = (parsed.path or "").lower()
+        query    = (parsed.query or "").lower()
+    except Exception:
+        hostname = path = query = ""
+
+    is_ip      = bool(re.match(r"^(\d{1,3}\.){3}\d{1,3}$", hostname)) or bool(re.search(r"(\d{1,3}\.){3}\d{1,3}", hostname))
+    path_lower = path + "/" + query
+    path_brand = any(brand in path_lower for brand in PATH_BRANDS)
+
     feats = {
         "url_length":        len(url),
         "num_special_chars": sum(url.count(c) for c in SPECIAL_CHARS),
@@ -299,9 +322,10 @@ def extract_features(url: str) -> pd.DataFrame:
         "num_at":            url.count("@"),
         "num_query_params":  url.count("?") + url.count("&"),
         "has_https":         int(url.startswith("https")),
-        "has_ip":            int(bool(re.search(r"(\d{1,3}\.){3}\d{1,3}", url))),
-        "subdomain_depth":   max(0, len(url.split("/")[0].split(".")) - 2),
+        "subdomain_depth":   max(0, len(hostname.split(".")) - 2),
         "path_depth":        url.count("/"),
+        "is_ip":             int(is_ip),
+        "path_brand":        int(path_brand),
     }
     return pd.DataFrame([feats])[FEATURES]
 
