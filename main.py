@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from fastapi.responses import RedirectResponse
 
 from predictor import predict_url
 
@@ -134,4 +135,9 @@ def predict(req: URLRequest):
 def health():
     """Readiness / liveness probe."""
     return {"status": "ok", "model": "Random Forest (AUC 0.9648)"}
+
+@app.get("/")
+def read_root():
+    """Redirect root access to the Swagger documentation."""
+    return RedirectResponse(url="/docs")
 
