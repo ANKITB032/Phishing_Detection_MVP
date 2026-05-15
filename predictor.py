@@ -70,8 +70,8 @@ TRUSTED_DOMAINS: set[str] = {
     # Security / infra
     "cloudflare.com",   "godaddy.com",      "namecheap.com",
     "letsencrypt.org",  "digicert.com",
-    # Hosting & deploy
-    "vercel.app",
+    # Hosting & deploy (root domains — subdomain abuse handled by infra patch)
+    "vercel.app",       "github.io",
     # Email & comms
     "outlook.com",      "proton.me",        "whatsapp.com",
     # News / reference
@@ -752,6 +752,25 @@ def _analyse_url(url: str) -> dict:
         label = 0
         trust_override = True
         confidence = float(proba[0])
+
+    # ── Hard overrides — always fire regardless of trust_override ────────
+
+    # Bug fix: infra abuse must override trust protocol — an attacker-controlled
+    # subdomain on a free host is never safe regardless of ML score.
+    if infra_abuse_flag:
+        label = 1
+        trust_override = False
+        confidence = max(confidence, 0.85)
+
+    # Raw IP host — legitimate services don't use bare IPs as public URLs.
+    # Fires here because the ML underweights is_ip on low-variance data.
+    _parsed_host = (urlparse(url if "://" in url else f"https://{url}").hostname or "")
+    if re.match(r"^(\d{1,3}\.){3}\d{1,3}$", _parsed_host):
+        label = 1
+        trust_override = False
+        confidence = max(confidence, 0.80)
+        if "Raw IP host detected" not in threat_flags:
+            threat_flags.append("Raw IP host detected — legitimate services don't use bare IP addresses")
 
     # ── Heuristic escalation (only if NOT trust-overridden) ─────────────
     if not trust_override:
