@@ -23,7 +23,7 @@ from predictor import predict_url
 app = FastAPI(
     title="PhishGuard API",
     description="Phishing URL detection with cryptographic payload analysis",
-    version="3.0.0",
+    version="3.5.0",
 )
 
 app.add_middleware(

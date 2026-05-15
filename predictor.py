@@ -14,19 +14,14 @@ Pipeline order:
 import re
 import math
 import base64
-import binascii
 import joblib
 import os
-import logging
 import pandas as pd
-import requests
 from urllib.parse import urlparse, parse_qs
-
-logger = logging.getLogger(__name__)
 
 # ── Model Loading ────────────────────────────────────────────────────────────
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "04_Saved_Models", "phishing_model.joblib")
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "04_Saved_Models", "phishing_model_v3_5.joblib")
 _model = joblib.load(MODEL_PATH)
 
 SPECIAL_CHARS = "@-?=.#%+&_~/!"
@@ -52,8 +47,6 @@ TRUSTED_DOMAINS: set[str] = {
     "microsoft.com",    "apple.com",        "amazon.com",
     "meta.com",         "facebook.com",     "instagram.com",
     "twitter.com",      "x.com",            "linkedin.com",
-    # AI / research
-    "claude.ai",        "anthropic.com",
     # Developer / code
     "github.com",       "gitlab.com",       "stackoverflow.com",
     "npmjs.com",        "pypi.org",         "docker.com",
@@ -69,16 +62,12 @@ TRUSTED_DOMAINS: set[str] = {
     # Security / infra
     "cloudflare.com",   "godaddy.com",      "namecheap.com",
     "letsencrypt.org",  "digicert.com",
-    # Hosting & deploy
-    "vercel.app",
     # Email & comms
     "outlook.com",      "proton.me",        "whatsapp.com",
     # News / reference
     "bbc.com",          "cnn.com",          "nytimes.com",
     # Education
     "coursera.org",     "edx.org",          "khanacademy.org",
-    # Personal / portfolio
-    "ankitband.me",
 }
 
 
@@ -107,6 +96,110 @@ def _extract_domain(url: str) -> str:
 def is_trusted_domain(url: str) -> bool:
     """Return True if the URL's domain belongs to the trusted whitelist."""
     return _extract_domain(url) in TRUSTED_DOMAINS
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  INFRASTRUCTURE ABUSE PATCH
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Platforms that offer free subdomain hosting — their eTLD+1 is legitimately
+# whitelisted, but individual subdomains can be attacker-controlled.
+FREE_HOSTING_PROVIDERS: set[str] = {
+    "firebaseapp.com",
+    "web.app",
+    "vercel.app",
+    "netlify.app",
+    "github.io",
+    "pages.dev",       # Cloudflare Pages
+    "workers.dev",     # Cloudflare Workers
+    "glitch.me",
+    "repl.co",
+    "ngrok.io",
+    "onrender.com",
+    "fly.dev",
+}
+
+# Sensitive keywords that are legitimate in a root domain (paypal.com)
+# but deeply suspicious in an attacker-controlled subdomain.
+_INFRA_SENSITIVE_KEYWORDS: list[str] = [
+    "verify", "service", "secure", "login", "account", "update",
+    "confirm", "support", "billing", "payment", "auth", "signin",
+    "password", "recover", "unlock", "validate", "alert", "admin",
+]
+
+# Entropy threshold — random subdomain hashes score > 3.5
+_SUBDOMAIN_ENTROPY_THRESHOLD = 3.5
+
+
+def _subdomain_entropy(hostname: str) -> float:
+    """Shannon entropy of the subdomain label (everything left of eTLD+1)."""
+    parts = hostname.rstrip(".").split(".")
+    # Strip the last two labels (eTLD+1) to isolate the subdomain
+    subdomain = ".".join(parts[:-2]) if len(parts) > 2 else ""
+    if not subdomain:
+        return 0.0
+    freq = {}
+    for ch in subdomain:
+        freq[ch] = freq.get(ch, 0) + 1
+    n = len(subdomain)
+    return -sum((c / n) * math.log2(c / n) for c in freq.values())
+
+
+def check_infrastructure_abuse(url: str) -> dict:
+    """
+    Detect attackers abusing free-hosting subdomains of trusted platforms.
+
+    Fires when ALL three conditions are true:
+      1. The eTLD+1 belongs to FREE_HOSTING_PROVIDERS.
+      2. There IS a non-empty subdomain (i.e. not the root domain itself).
+      3. Either the subdomain contains a sensitive keyword  OR  its Shannon
+         entropy exceeds _SUBDOMAIN_ENTROPY_THRESHOLD (flags random hashes).
+    """
+    normalized = url if "://" in url else f"https://{url}"
+    hostname   = (urlparse(normalized).hostname or "").lower().rstrip(".")
+    parts      = hostname.split(".")
+
+    # Derive eTLD+1
+    etld1 = ".".join(parts[-2:]) if len(parts) >= 2 else hostname
+
+    if etld1 not in FREE_HOSTING_PROVIDERS:
+        return {"is_abuse": False, "provider": None, "subdomain": None, "reason": ""}
+
+    # Must have an actual subdomain (not just "firebaseapp.com" itself)
+    if len(parts) <= 2:
+        return {"is_abuse": False, "provider": etld1, "subdomain": None,
+                "reason": "Root provider domain — no subdomain present."}
+
+    subdomain = ".".join(parts[:-2])
+
+    # Condition A: sensitive keyword present in subdomain
+    keyword_hit = next(
+        (kw for kw in _INFRA_SENSITIVE_KEYWORDS if kw in subdomain.lower()),
+        None,
+    )
+
+    # Condition B: high entropy (randomised hash subdomain)
+    entropy = _subdomain_entropy(hostname)
+    high_entropy = entropy > _SUBDOMAIN_ENTROPY_THRESHOLD
+
+    is_abuse = bool(keyword_hit or high_entropy)
+
+    if not is_abuse:
+        return {"is_abuse": False, "provider": etld1, "subdomain": subdomain,
+                "reason": "Subdomain on free provider but no suspicious indicators."}
+
+    reasons = []
+    if keyword_hit:
+        reasons.append(f"sensitive keyword '{keyword_hit}' in subdomain '{subdomain}'")
+    if high_entropy:
+        reasons.append(f"high subdomain entropy ({entropy:.2f} bits) suggests randomised phishing slug")
+
+    return {
+        "is_abuse":  True,
+        "provider":  etld1,
+        "subdomain": subdomain,
+        "reason":    f"Infrastructure abuse on {etld1}: " + "; ".join(reasons) + ".",
+    }
 
 
 # ── Feature Extraction (mirrors feature_extractor.py) ────────────────────────
@@ -250,15 +343,11 @@ def detect_encoded_payloads(url: str) -> dict:
     # Validate Base64 candidates by attempting decode
     verified_b64 = []
     for candidate in base64_matches:
-        try:
-            padded = candidate + "=" * (-len(candidate) % 4)
-            decoded = base64.b64decode(padded)
-            # Only flag if decoded bytes look like printable ASCII (payload text)
-            if decoded and sum(32 <= b < 127 for b in decoded) / len(decoded) > 0.7:
-                verified_b64.append(candidate[:40] + ("…" if len(candidate) > 40 else ""))
-        except (binascii.Error, ValueError):
-            # Not valid Base64 — skip silently
-            continue
+        padded = candidate + "=" * (-len(candidate) % 4)
+        decoded = base64.b64decode(padded, validate=True)
+        # Only flag if decoded bytes look like printable ASCII (payload text)
+        if decoded and sum(32 <= b < 127 for b in decoded) / len(decoded) > 0.7:
+            verified_b64.append(candidate[:40] + ("…" if len(candidate) > 40 else ""))
 
     return {
         "base64_found":    len(verified_b64) > 0,
@@ -365,252 +454,57 @@ def detect_vulnerability_patterns(url: str) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  MODULE A — SUSPICIOUS TLD CHECK
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# TLDs disproportionately used in phishing campaigns (cheap/free registration).
-SUSPICIOUS_TLDS: set[str] = {
-    ".top", ".xyz", ".tk", ".ml", ".ga", ".cf", ".gq",
-    ".buzz", ".club", ".work", ".info", ".icu", ".cam",
-    ".rest", ".surf", ".monster", ".sbs",
-}
-
-
-def check_suspicious_tld(url: str) -> dict:
-    """
-    Flag the URL if its TLD belongs to the known-abused set.
-
-    Returns:
-        {"flagged": bool, "tld": str}
-    """
-    domain = _extract_domain(url)
-    tld = "." + domain.split(".")[-1].lower() if "." in domain else ""
-    return {"flagged": tld in SUSPICIOUS_TLDS, "tld": tld}
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  MODULE B — URL COMPLEXITY CHECK
-# ═══════════════════════════════════════════════════════════════════════════════
-
-MAX_SAFE_DOTS   = 5     # more than 5 dots → suspicious subdomain chaining
-MAX_SAFE_LENGTH = 100   # URLs > 100 chars often hide payloads in path/query
-
-
-def check_url_complexity(url: str) -> dict:
-    """
-    Flag URLs that are structurally complex — long length or excessive
-    dot-separated labels — which correlates with phishing infrastructure.
-
-    Returns:
-        {"is_complex": bool, "dot_count": int, "url_length": int, "details": list[str]}
-    """
-    dot_count  = url.count(".")
-    url_length = len(url)
-    details    = []
-
-    if dot_count > MAX_SAFE_DOTS:
-        details.append(f"Excessive dot count ({dot_count}) suggests subdomain chaining.")
-    if url_length > MAX_SAFE_LENGTH:
-        details.append(f"URL length ({url_length} chars) exceeds safe threshold.")
-
-    return {
-        "is_complex": len(details) > 0,
-        "dot_count":  dot_count,
-        "url_length": url_length,
-        "details":    details,
-    }
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  MODULE C — PHISHING KEYWORD ANALYSIS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Keywords commonly found in credential-harvesting paths.
-PHISHING_KEYWORDS: set[str] = {
-    "login", "signin", "sign-in", "log-in",
-    "verify", "verification", "validate",
-    "update", "upgrade",
-    "account", "myaccount", "my-account",
-    "banking", "secure", "security",
-    "password", "passwd", "credential",
-    "confirm", "suspend", "alert",
-    "wallet", "recover", "unlock",
-}
-
-
-def check_phishing_keywords(url: str) -> dict:
-    """
-    Scan the URL path (everything after the domain) for credential-harvesting
-    keywords that are strongly associated with phishing landing pages.
-
-    Returns:
-        {"found": bool, "matched_keywords": list[str]}
-    """
-    parsed = urlparse(url if "://" in url else f"https://{url}")
-    # Examine the path + query (lowercased) for keyword presence
-    search_area = (parsed.path + "?" + parsed.query).lower() if parsed.query \
-        else parsed.path.lower()
-
-    matched = [kw for kw in PHISHING_KEYWORDS if kw in search_area]
-    return {"found": len(matched) > 0, "matched_keywords": sorted(set(matched))}
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  MODULE E — IPFS GATEWAY CHECK
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Known public IPFS gateways used to serve decentralised content.
-# Phishing kits are increasingly hosted on IPFS because the content
-# is immutable and cannot be taken down by a single provider.
-IPFS_GATEWAYS: set[str] = {
-    "ipfs.io",
-    "cloudflare-ipfs.com",
-    "pinata.cloud",
-    "gateway.pinata.cloud",
-    "dweb.link",
-    "w3s.link",
-    "nftstorage.link",
-}
-
-# CIDv0 = 46-char base58 starting with Qm; CIDv1 = 59+ char base32/base36
-_IPFS_CID_RE = re.compile(
-    r"(?:/ipfs/|/ipns/)"
-    r"(?P<cid>[A-Za-z0-9]{46,})",
-)
-
-# Optional: hashes that have been manually verified as safe.
-WHITELISTED_IPFS_HASHES: set[str] = set()
-
-
-def check_ipfs_gateway(url: str) -> dict:
-    """
-    Detect whether the URL routes through a known IPFS gateway and
-    contains a long content-addressed hash (CID).
-
-    Returns:
-        {
-            "is_ipfs":   bool,
-            "gateway":   str | None,
-            "cid":       str | None,
-            "whitelisted": bool,
-        }
-    """
-    parsed = urlparse(url if "://" in url else f"https://{url}")
-    hostname = (parsed.hostname or "").lower().rstrip(".")
-
-    # Check if the hostname matches or is a subdomain of a known gateway
-    gateway_match = None
-    for gw in IPFS_GATEWAYS:
-        if hostname == gw or hostname.endswith(f".{gw}"):
-            gateway_match = gw
-            break
-
-    if not gateway_match:
-        return {"is_ipfs": False, "gateway": None, "cid": None, "whitelisted": False}
-
-    # Look for a CID in the path
-    cid_match = _IPFS_CID_RE.search(parsed.path)
-    if not cid_match:
-        # Some gateways use subdomain-style: <cid>.ipfs.<gateway>
-        # e.g. bafybei...ipfs.dweb.link
-        parts = hostname.split(".")
-        if len(parts) >= 3 and len(parts[0]) >= 46:
-            cid = parts[0]
-            is_safe = cid in WHITELISTED_IPFS_HASHES
-            return {"is_ipfs": True, "gateway": gateway_match, "cid": cid, "whitelisted": is_safe}
-        return {"is_ipfs": False, "gateway": gateway_match, "cid": None, "whitelisted": False}
-
-    cid = cid_match.group("cid")
-    is_safe = cid in WHITELISTED_IPFS_HASHES
-    return {"is_ipfs": True, "gateway": gateway_match, "cid": cid, "whitelisted": is_safe}
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  MODULE F — URL SHORTENER EXPANSION
-# ═══════════════════════════════════════════════════════════════════════════════
-
-SHORTENER_DOMAINS: set[str] = {
-    "bit.ly", "t.co", "tinyurl.com", "lnk.ink",
-    "cutt.ly", "t.ly", "goo.gl", "ow.ly",
-    "is.gd", "buff.ly", "rb.gy", "short.io",
-}
-
-_EXPAND_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-}
-
-
-def is_shortener(url: str) -> bool:
-    """Return True if the URL belongs to a known shortener domain."""
-    return _extract_domain(url) in SHORTENER_DOMAINS
-
-
-def expand_short_url(url: str) -> dict:
-    """
-    Follow redirects on a shortened URL to discover the final destination.
-
-    Uses a HEAD request with a 2-second timeout to avoid hanging on
-    unresponsive hosts.
-
-    Returns:
-        {
-            "is_short":     bool,
-            "original_url": str,
-            "expanded_url": str | None,
-            "error":        str | None,
-        }
-    """
-    if not is_shortener(url):
-        return {"is_short": False, "original_url": url, "expanded_url": None, "error": None}
-
-    normalized = url if "://" in url else f"https://{url}"
-    try:
-        resp = requests.head(
-            normalized,
-            allow_redirects=True,
-            timeout=2,
-            headers=_EXPAND_HEADERS,
-        )
-        final = resp.url
-        # Guard against redirect loops back to the same shortener
-        if _extract_domain(final) in SHORTENER_DOMAINS:
-            return {"is_short": True, "original_url": url, "expanded_url": final, "error": "Redirect loop"}
-        return {"is_short": True, "original_url": url, "expanded_url": final, "error": None}
-    except requests.RequestException as exc:
-        logger.warning("Shortener expansion failed for %s: %s", url, exc)
-        return {"is_short": True, "original_url": url, "expanded_url": None, "error": str(exc)}
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 #  UNIFIED PREDICTION INTERFACE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _analyse_url(url: str) -> dict:
+def predict_url(url: str) -> dict:
     """
-    Core analysis engine — runs the full heuristic + ML pipeline on a
-    single URL.  Called directly for normal URLs and recursively for
-    the expanded destination of shortened URLs.
+    Full prediction pipeline:
+
+    0a. Check for infrastructure abuse on trusted platforms.
+    0b. Trusted-domain fast path (whitelist bypass).
+    1. Run cryptographic / vulnerability pre-screening.
+    2. Extract ML features and run the trained model.
+    3. Merge all results into a single response dict.
+
+    Returns:
+        {
+            "url":        str,
+            "label":      0 | 1,
+            "verdict":    "benign" | "malicious",
+            "confidence": float (0-100),
+            "reason":     str,
+            "security_analysis": {
+                "encoded_payloads": {...},
+                "entropy_analysis": {...},
+                "vulnerability_patterns": {...},
+                "threat_flags": [str, ...],
+                "infrastructure_abuse": {...}
+            }
+        }
     """
-    # ── Step 0: Trusted-domain fast path ──────────────────────────────────
-    if is_trusted_domain(url):
+    # ── Step 0a: Infrastructure Abuse Pre-Check ────────────────────────
+    _infra = check_infrastructure_abuse(url)
+    infra_abuse_flag = _infra["is_abuse"]
+
+    # ── Step 0b: Trusted-domain fast path ──────────────────────────────────
+    # Note: Whitelist bypasses only if infra_abuse_flag is False
+    if is_trusted_domain(url) and not infra_abuse_flag:
+        domain = _extract_domain(url)
         return {
             "url":        url,
             "label":      0,
             "verdict":    "benign",
             "confidence": 100.0,
-            "reason":     "Verified Source: This domain is on the global trusted whitelist.",
+            "reason":     f"Trusted domain ({domain}) — bypassed via whitelist.",
             "security_analysis": "Bypassed via trusted domain whitelist",
         }
 
     # ── Pre-screening ────────────────────────────────────────────────────
-    encoded    = detect_encoded_payloads(url)
-    entropy    = analyse_query_entropy(url)
-    vulns      = detect_vulnerability_patterns(url)
-    typo       = detect_typosquatting(url)
-    tld_check  = check_suspicious_tld(url)
-    complexity = check_url_complexity(url)
-    keywords   = check_phishing_keywords(url)
-    ipfs       = check_ipfs_gateway(url)
+    encoded  = detect_encoded_payloads(url)
+    entropy  = analyse_query_entropy(url)
+    vulns    = detect_vulnerability_patterns(url)
+    typo     = detect_typosquatting(url)
 
     threat_flags = []
     if encoded["base64_found"]:
@@ -623,14 +517,8 @@ def _analyse_url(url: str) -> dict:
         threat_flags.append(f"Vulnerability pattern: {category.replace('_', ' ')}")
     if typo["is_typosquat"]:
         threat_flags.append(f"Typosquatting: domain resembles {typo['matched_brand']}")
-    if tld_check["flagged"]:
-        threat_flags.append(f"Suspicious TLD: {tld_check['tld']}")
-    if complexity["is_complex"]:
-        threat_flags.append("URL structural complexity exceeded safe thresholds")
-    if keywords["found"]:
-        threat_flags.append(f"Phishing keywords in path: {', '.join(keywords['matched_keywords'])}")
-    if ipfs["is_ipfs"] and not ipfs["whitelisted"]:
-        threat_flags.append(f"IPFS gateway detected: {ipfs['gateway']}")
+    if infra_abuse_flag:
+        threat_flags.append(_infra["reason"])
 
     # ── ML Inference ─────────────────────────────────────────────────────
     X = extract_features(url)
@@ -638,45 +526,20 @@ def _analyse_url(url: str) -> dict:
     proba      = _model.predict_proba(X)[0]
     confidence = float(proba[label])
 
-    # ── Heuristic flag counter (A-F modules) ─────────────────────────────
-    heuristic_count = sum([
-        typo["is_typosquat"],                          # A — Typosquatting
-        tld_check["flagged"],                          # B — Suspicious TLD
-        keywords["found"],                             # C — Phishing keywords
-        complexity["is_complex"],                      # D — URL complexity
-        ipfs["is_ipfs"] and not ipfs["whitelisted"],   # E — IPFS gateway
-    ])
-
-    # ── Trust Protocol: ML-malicious but zero heuristic flags → benign ──
-    trust_override = False
-    if label == 1 and heuristic_count == 0:
-        label = 0
-        trust_override = True
-        confidence = float(proba[0])
-
-    # ── Heuristic escalation (only if NOT trust-overridden) ─────────────
-    if not trust_override:
-        if label == 0 and len(threat_flags) >= 2:
-            label = 1
-            confidence = max(confidence, 0.70)
-
-        if typo["is_typosquat"]:
-            label = 1
-            confidence = max(confidence, 0.85)
-
-        if tld_check["flagged"] and len(threat_flags) >= 2:
-            label = 1
-            confidence = max(confidence, 0.75)
-
-        if keywords["found"] and label == 0 and len(threat_flags) >= 1:
-            label = 1
-            confidence = max(confidence, 0.72)
-
-    # ── IPFS escalation: overrides Trust Protocol — always malicious ────
-    if ipfs["is_ipfs"] and not ipfs["whitelisted"]:
+    # If the pre-screening found threats, escalate a "benign" ML result
+    if label == 0 and len(threat_flags) >= 2:
         label = 1
-        trust_override = False
-        confidence = min(confidence, 0.65)
+        confidence = max(confidence, 0.70)
+
+    # Typosquatting always forces malicious — regardless of ML score
+    if typo["is_typosquat"]:
+        label = 1
+        confidence = max(confidence, 0.85)
+        
+    # Infrastructure abuse forces malicious
+    if infra_abuse_flag:
+        label = 1
+        confidence = max(confidence, 0.90)
 
     verdict = "benign" if label == 0 else "malicious"
 
@@ -685,86 +548,33 @@ def _analyse_url(url: str) -> dict:
     if label == 0 and parsed_url.query:
         confidence = min(confidence, 0.80)
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  REASONING HIERARCHY
-    #  Trust-override → Heuristics (A-E) → Crypto/vuln → Model fallback
-    # ══════════════════════════════════════════════════════════════════════
+    # ── Build detection reason ───────────────────────────────────────────
     reasons = []
 
-    if trust_override:
+    # Priorities in reasoning
+    if typo["is_typosquat"]:
         reasons.append(
-            "Matches clean structural profiles. "
-            "No deceptive keywords or hidden payloads detected."
+            f"Visual Deception: This domain is highly similar to "
+            f"{typo['matched_brand']}, suggesting a typosquatting attack."
         )
+    if infra_abuse_flag:
+        reasons.append(f"Infrastructure Abuse: {_infra['reason']}")
 
-    if not trust_override:
-        # A — Typosquatting
-        if typo["is_typosquat"]:
-            reasons.append(
-                f"Visual Deception: This domain is highly similar to "
-                f"{typo['matched_brand']}, suggesting a typosquatting attack."
-            )
+    if encoded["base64_found"]:
+        reasons.append("Encoded cryptographic payload detected in URL parameters.")
+    if encoded["hex_found"]:
+        reasons.append("Hex-encoded byte sequence found in URL.")
+    if entropy["high_entropy"]:
+        reasons.append(f"Abnormally high entropy ({entropy['query_entropy']} bits) in query string suggests obfuscated data.")
+    for category in vulns:
+        readable = category.replace("_", " ").title()
+        reasons.append(f"Vulnerability pattern detected: {readable}.")
 
-        # B — Suspicious TLD
-        if tld_check["flagged"]:
-            reasons.append(
-                f"Risky TLD: The domain uses '{tld_check['tld']}', a top-level "
-                f"domain frequently associated with phishing campaigns."
-            )
-
-        # C — Phishing keywords (enriched for OpenPhish)
-        if keywords["found"]:
-            kw_list = ", ".join(keywords["matched_keywords"])
-            parsed_tmp = urlparse(url if "://" in url else f"https://{url}")
-            sub_depth  = max(0, len((parsed_tmp.hostname or "").split(".")) - 2)
-            path_seg   = parsed_tmp.path.strip("/").count("/") + 1 if parsed_tmp.path.strip("/") else 0
-            reasons.append(
-                f"Credential-harvesting keywords ({kw_list}) found across "
-                f"{path_seg} path segment(s) at subdomain depth {sub_depth}."
-            )
-
-        # D — URL complexity (enriched with subdomain depth)
-        if complexity["is_complex"]:
-            parsed_tmp = urlparse(url if "://" in url else f"https://{url}")
-            sub_depth  = max(0, len((parsed_tmp.hostname or "").split(".")) - 2)
-            for detail in complexity["details"]:
-                reasons.append(f"{detail} (subdomain depth: {sub_depth})")
-
-        # E — IPFS Gateway
-        if ipfs["is_ipfs"] and not ipfs["whitelisted"]:
-            cid_preview = f" CID: {ipfs['cid'][:16]}..." if ipfs["cid"] and len(ipfs["cid"]) > 16 else ""
-            reasons.append(
-                f"IPFS Gateway detected ({ipfs['gateway']}): "
-                f"Decentralised hosting is frequently used to serve phishing "
-                f"content that bypasses traditional domain filters.{cid_preview}"
-            )
-
-    # ── SECONDARY: Crypto / vuln details ────────────────────────────────
-    if not trust_override:
-        if encoded["base64_found"]:
-            reasons.append("Encoded cryptographic payload detected in URL parameters.")
-        if encoded["hex_found"]:
-            reasons.append("Hex-encoded byte sequence found in URL.")
-        if entropy["high_entropy"]:
-            reasons.append(
-                f"Abnormally high entropy ({entropy['query_entropy']} bits) in "
-                f"query string suggests obfuscated data."
-            )
-        for category in vulns:
-            readable = category.replace("_", " ").title()
-            reasons.append(f"Vulnerability pattern detected: {readable}.")
-
-    # ── FALLBACK: Model patterns ────────────────────────────────────────
     if not reasons:
         if label == 1:
-            reasons.append(
-                "Model Patterns: Structural analysis detected statistical "
-                "anomalies consistent with known phishing infrastructure."
-            )
+            reasons.append("Model detected structural patterns common in phishing sites.")
         else:
-            reasons.append(
-                "No suspicious indicators found. URL structure appears benign."
-            )
+            reasons.append("No suspicious indicators found. URL structure appears benign.")
 
     reason = " ".join(reasons)
 
@@ -779,72 +589,10 @@ def _analyse_url(url: str) -> dict:
             "entropy_analysis":       entropy,
             "vulnerability_patterns": vulns,
             "typosquatting":          typo,
-            "suspicious_tld":         tld_check,
-            "url_complexity":         complexity,
-            "phishing_keywords":      keywords,
+            "infrastructure_abuse":   _infra,
             "threat_flags":           threat_flags,
-            "trust_override":         trust_override,
-            "ipfs_gateway":           ipfs,
         },
     }
-
-
-def predict_url(url: str) -> dict:
-    """
-    Public prediction interface with URL-shortener expansion (Module F).
-
-    If the URL belongs to a known shortener, it is expanded via HTTP HEAD
-    and the *expanded* URL is recursively analysed through the full pipeline.
-    The result includes both the original and expanded URLs along with the
-    analysis of the final destination.
-    """
-    shortener = expand_short_url(url)
-
-    if shortener["is_short"] and shortener["expanded_url"] and not shortener["error"]:
-        # Analyse the expanded destination
-        expanded = shortener["expanded_url"]
-        result = _analyse_url(expanded)
-
-        # Cap shortener confidence at 70 %
-        if result["confidence"] > 70.0:
-            result["confidence"] = 70.0
-        # Force malicious if destination was also flagged
-        if result["label"] == 0:
-            result["label"] = 1
-            result["verdict"] = "malicious"
-            result["confidence"] = max(result["confidence"], 65.0)
-
-        # Prepend shortener context to reason
-        result["reason"] = (
-            f"URL Shortener ({_extract_domain(url)}): "
-            f"Expanded to {expanded}. " + result["reason"]
-        )
-        # Attach shortener metadata
-        result["url"] = url
-        if isinstance(result["security_analysis"], dict):
-            result["security_analysis"]["shortener_expansion"] = shortener
-        return result
-
-    if shortener["is_short"] and shortener["error"]:
-        # Could not expand — flag as suspicious shortener
-        result = _analyse_url(url)
-        result["label"] = 1
-        result["verdict"] = "malicious"
-        result["confidence"] = max(result["confidence"], 65.0)
-        result["reason"] = (
-            f"URL Shortener ({_extract_domain(url)}): "
-            f"Expansion failed ({shortener['error']}). Treating as suspicious. "
-            + result["reason"]
-        )
-        if isinstance(result["security_analysis"], dict):
-            result["security_analysis"]["shortener_expansion"] = shortener
-        return result
-
-    # Not a shortener — normal analysis
-    result = _analyse_url(url)
-    if isinstance(result["security_analysis"], dict):
-        result["security_analysis"]["shortener_expansion"] = shortener
-    return result
 
 
 # ── CLI entry point ──────────────────────────────────────────────────────────
