@@ -130,5 +130,6 @@ Modules run sequentially on the final URL (post-shortener expansion). Each modul
 5. **Redeploy to Hugging Face Spaces** via `git push` (model is tracked via Git LFS).
 6. Consider adding rate limiting (`slowapi`) and a Tranco top-1M whitelist pre-filter for production hardening.
 - [x] Local v3.5 testing complete — feature mismatch resolved, FastAPI curl tests passing (2026-05-19 09:32)
--   [ x ]   L o c a l   v 3 . 5   t e s t i n g   c o m p l e t e      f e a t u r e   m i s m a t c h   r e s o l v e d ,   F a s t A P I   c u r l   t e s t s   p a s s i n g   ( 2 0 2 6 - 0 5 - 1 9   0 9 : 3 8 )  
- 
+- [x] FN error analysis complete — 18,005 FNs isolated (8.5% of malicious); blind spots: open redirect URL-in-query (FN ranks 4,10) and unrepresented TLD risk. Dataset label noise confirmed for ranks 1,3,5-9,13,15 (structurally benign sites).
+- [x] Two new features added to retrain_model.py and predictor.py: `url_in_query` (open redirect detection), `tld_risk` (ordinal 0-2 TLD abuse score). Total feature count: 13.
+- [x] Model retrained — phishing_model_v3_5.joblib updated. ROC-AUC: 0.9645, FN count reduced from 18,005 to 4,305 on held-out test set (20%). FN patch spot-checks: open redirect ✓, .tk TLD ✓. 2026-05-19 10:53

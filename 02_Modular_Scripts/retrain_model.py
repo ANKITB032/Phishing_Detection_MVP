@@ -1,12 +1,17 @@
 """
 retrain_model.py — PhishGuard v3.5 Model Retraining Script
 ============================================================
-Retrains the Random Forest classifier with two new features that fix
-the raw-IP and brand-in-path blind spots identified in v3.0.
+Retrains the Random Forest classifier with four features that fix blind
+spots identified in v3.0 and confirmed via FN error analysis.
 
-New features:
+Features added beyond v3.0 baseline:
   - is_ip        : bool — host is a raw IPv4 address (e.g. http://213.190.128.11/paypal/)
   - path_brand   : bool — URL path contains a spoofed brand name
+  - url_in_query : bool — query string embeds a second URL/domain (open redirect)
+                          Identified from FN ranks 4 & 10: ?ref=http://legit.com/login
+  - tld_risk     : int  — ordinal TLD risk score (0=low, 1=medium, 2=high)
+                          Encodes .info/.biz/.name (medium) and .tk/.ml/.ga/.cf/.gq/
+                          .xyz/.top/.club/.work/.icu/.buzz/.cam (high) phishing rates
 
 Run:
     python3 retrain_model.py --input ../01_Datasets/malicious_phish.csv \
@@ -65,6 +70,24 @@ PATH_BRANDS: list[str] = [
 _IP_RE     = re.compile(r"^(\d{1,3}\.){3}\d{1,3}$")
 _IP_IN_URL = re.compile(r"(\d{1,3}\.){3}\d{1,3}")
 
+# Detects a second embedded URL in the query string (open redirect bait).
+# e.g. ?ref=http://legit.com/login  or  ?next=//evil.com
+_URL_IN_QUERY_RE = re.compile(
+    r"(https?://|//|www\.)[a-z0-9\-]+\.[a-z]{2,}",
+    re.IGNORECASE,
+)
+
+# TLD ordinal risk score derived from phishing-campaign abuse frequency.
+# 0 = common/low-risk  |  1 = medium-risk  |  2 = high-risk (blocklist)
+_TLD_RISK: dict[str, int] = {
+    # medium risk
+    ".info": 1, ".biz": 1, ".name": 1, ".mobi": 1, ".pro": 1,
+    # high risk (same set as predictor.py SUSPICIOUS_TLDS)
+    ".top": 2, ".xyz": 2, ".tk": 2, ".ml": 2, ".ga": 2,
+    ".cf": 2, ".gq": 2, ".buzz": 2, ".club": 2, ".work": 2,
+    ".icu": 2, ".cam": 2, ".rest": 2, ".surf": 2, ".monster": 2, ".sbs": 2,
+}
+
 
 # ── Feature Extraction ───────────────────────────────────────────────────────
 
@@ -76,12 +99,16 @@ def extract_features(url: str) -> dict:
         url_length, num_special_chars, num_dots, num_hyphens, num_at,
         num_query_params, has_https, subdomain_depth, path_depth
 
-    New features (v3.5):
+    Features added v3.5 (original):
         is_ip       — True if the host is a bare IPv4 address.
-                      Fixes: http://213.190.128.11/paypal/ scored benign
-                      because it had no dots-in-domain, no hyphens, short path.
         path_brand  — True if the URL path contains a spoofed brand keyword.
-                      Fixes: /paypal/ in the path was invisible to v3.0.
+
+    Features added v3.5 (FN error-analysis patch):
+        url_in_query — Query string embeds a second URL/domain (open redirect).
+                       Caught FN ranks 4 & 10: ?ref=http://us.battle.net/login/
+        tld_risk     — Ordinal TLD risk score: 0=benign, 1=medium, 2=high-abuse.
+                       Directly encodes .info (rank 2 FN) and the SUSPICIOUS_TLDS
+                       blocklist already used by predictor.py heuristics.
     """
     try:
         parsed   = urlparse(url if "://" in url else f"https://{url}")
@@ -95,6 +122,13 @@ def extract_features(url: str) -> dict:
     path_lower = path + "/" + query
     path_brand = any(brand in path_lower for brand in PATH_BRANDS)
 
+    # url_in_query: open redirect / URL embedding in query string
+    url_in_query = bool(_URL_IN_QUERY_RE.search(query))
+
+    # tld_risk: look up the last label of the hostname
+    tld = "." + hostname.split(".")[-1] if "." in hostname else ""
+    tld_risk = _TLD_RISK.get(tld, 0)
+
     return {
         # ── Structural (v3.0) ──────────────────────────────────────────────
         "url_length":        len(url),
@@ -106,9 +140,12 @@ def extract_features(url: str) -> dict:
         "has_https":         int(url.startswith("https")),
         "subdomain_depth":   max(0, len(hostname.split(".")) - 2),
         "path_depth":        url.count("/"),
-        # ── New (v3.5) ────────────────────────────────────────────────────
+        # ── v3.5 original ─────────────────────────────────────────────────
         "is_ip":             int(is_ip),
         "path_brand":        int(path_brand),
+        # ── v3.5 FN patch ─────────────────────────────────────────────────
+        "url_in_query":      int(url_in_query),
+        "tld_risk":          tld_risk,
     }
 
 
@@ -134,7 +171,7 @@ def load_and_clean(csv_path: str) -> pd.DataFrame:
     df.dropna(subset=["label"], inplace=True)          # drop unknown type values
     df["label"] = df["label"].astype(int)
 
-    print(f"    Rows: {before:,} raw → {after:,} clean ({before - after:,} dropped)")
+    print(f"    Rows: {before:,} raw -> {after:,} clean ({before - after:,} dropped)")
     print(f"    Label dist: {df['label'].value_counts().to_dict()}")
     return df
 
@@ -202,6 +239,7 @@ def evaluate(pipeline: Pipeline, X_test: pd.DataFrame, y_test: pd.Series) -> Non
     print(f"  {'─'*22}  {'─'*10}")
     for feat, imp in feat_rank:
         marker = "  ← NEW" if feat in ("is_ip", "path_brand") else ""
+        marker = "  ← FN PATCH" if feat in ("url_in_query", "tld_risk") else marker
         print(f"  {feat:<22}  {imp:>10.4f}{marker}")
 
 
@@ -219,6 +257,10 @@ def spot_check(pipeline: Pipeline) -> None:
         ("https://google.com",                          0, "legit Google"),
         ("http://paypa1-secure.login-verify.com/",      1, "typosquat + keywords"),
         ("https://amazon.com/dp/B09G9FPHY6",            0, "legit Amazon product"),
+        # FN patch regression tests
+        ("http://www.hsqxx.com/js/?us.battle.net/login/en/?ref=http",  1, "open redirect in query"),
+        ("http://secure-verify.tk/account/update",      1, "high-risk TLD .tk"),
+        ("http://calendarscripts.info/index.php?action=product", 1, "medium-risk TLD .info"),
     ]
 
     for url, expected_label, note in cases:

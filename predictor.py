@@ -36,6 +36,7 @@ FEATURES = [
     "num_at", "num_query_params", "has_https",
     "subdomain_depth", "path_depth",
     "is_ip", "path_brand",
+    "url_in_query", "tld_risk",    # v3.5 FN patch
 ]
 
 
@@ -196,8 +197,21 @@ def is_trusted_domain(url: str) -> bool:
     """Return True if the URL's domain belongs to the trusted whitelist."""
     return _extract_domain(url) in TRUSTED_DOMAINS
 
+# ── FN Patch constants (v3.5 error-analysis) ─────────────────────────────────
 
-# ── Feature Extraction (mirrors feature_extractor.py) ────────────────────────
+# Detects a second embedded URL in the query string (open redirect bait).
+_URL_IN_QUERY_RE = re.compile(
+    r"(https?://|//|www\.)[a-z0-9\-]+\.[a-z]{2,}",
+    re.IGNORECASE,
+)
+
+# TLD ordinal risk score: 0=low, 1=medium-risk, 2=high-abuse
+_TLD_RISK: dict[str, int] = {
+    ".info": 1, ".biz": 1, ".name": 1, ".mobi": 1, ".pro": 1,
+    ".top": 2, ".xyz": 2, ".tk": 2, ".ml": 2, ".ga": 2,
+    ".cf": 2, ".gq": 2, ".buzz": 2, ".club": 2, ".work": 2,
+    ".icu": 2, ".cam": 2, ".rest": 2, ".surf": 2, ".monster": 2, ".sbs": 2,
+}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -299,6 +313,9 @@ def extract_features(url: str) -> pd.DataFrame:
         "path_depth":        url.count("/"),
         "is_ip":       int(bool(re.search(r"(\d{1,3}\.){3}\d{1,3}", url.split("/")[0]))),
         "path_brand":  int(any(b in url.split("/", 3)[-1].lower() for b in PATH_BRANDS)),
+        # v3.5 FN patch
+        "url_in_query": int(bool(_URL_IN_QUERY_RE.search(urlparse(url if "://" in url else f"https://{url}").query))),
+        "tld_risk":     _TLD_RISK.get("." + (urlparse(url if "://" in url else f"https://{url}").hostname or "").split(".")[-1].lower(), 0),
     }
     return pd.DataFrame([feats])[FEATURES]
 
