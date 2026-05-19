@@ -1,1 +1,2 @@
 *.joblib filter=lfs diff=lfs merge=lfs -text
+04_Saved_Models/*.joblib filter=lfs diff=lfs merge=lfs -text
