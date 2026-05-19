@@ -129,3 +129,6 @@ Modules run sequentially on the final URL (post-shortener expansion). Each modul
 4. **Update `main.py` version** string to `3.5.0` and add `InfrastructureAbuse` to the `SecurityAnalysis` Pydantic model.
 5. **Redeploy to Hugging Face Spaces** via `git push` (model is tracked via Git LFS).
 6. Consider adding rate limiting (`slowapi`) and a Tranco top-1M whitelist pre-filter for production hardening.
+- [x] Local v3.5 testing complete — feature mismatch resolved, FastAPI curl tests passing (2026-05-19 09:32)
+-   [ x ]   L o c a l   v 3 . 5   t e s t i n g   c o m p l e t e      f e a t u r e   m i s m a t c h   r e s o l v e d ,   F a s t A P I   c u r l   t e s t s   p a s s i n g   ( 2 0 2 6 - 0 5 - 1 9   0 9 : 3 8 )  
+ 
