@@ -480,7 +480,88 @@ SUSPICIOUS_TLDS: set[str] = {
     ".top", ".xyz", ".tk", ".ml", ".ga", ".cf", ".gq",
     ".buzz", ".club", ".work", ".info", ".icu", ".cam",
     ".rest", ".surf", ".monster", ".sbs",
+    # Extended — confirmed phishing abuse (HFN analysis 2026-05-19)
+    ".tech", ".live", ".online", ".site", ".space", ".fun",
+    ".click", ".link", ".pw", ".cc", ".ws",
 }
+
+# Free / abused hosting platforms where any subdomain is attacker-controlled.
+# Distinct from FREE_HOSTING_PROVIDERS (which requires keyword/entropy check);
+# these are flagged unconditionally when combined with a brand/cred signal.
+ABUSED_FREE_HOSTS: set[str] = {
+    "000webhostapp.com", "byethost.com", "infinityfree.net",
+    "freehosting.com", "awardspace.com", "biz.nf", "ezyro.com",
+    "hostfree.pw", "webhostapp.com", "atwebpages.com",
+    # Already in FREE_HOSTING_PROVIDERS — duplicate here for unconditional check
+    "firebaseapp.com", "web.app", "vercel.app", "netlify.app",
+    "github.io", "pages.dev", "workers.dev", "glitch.me",
+    "repl.co", "onrender.com", "fly.dev", "ngrok.io",
+}
+
+# Regex: hyphenated credential / brand-impersonation patterns in hostname labels
+# Matches both directions:
+#   brand-first:  paypal-secure-login, apple-id-verify, appieid-enable
+#   cred-first:   secure-paypal, login-microsoft, verify-amazon
+_HYPHEN_CRED_RE = re.compile(
+    r"(?:"
+    # brand-first (including common typos: appieid, googel, etc.)
+    r"(apple|appl[ei]|appleid|appieid|google|googl[ei]|paypal|paypall|microsoft|amazon|amaz0n"
+    r"|facebook|instagram|netflix|linkedin|twitter|dropbox|github|spotify|adobe|yahoo"
+    r"|chase|ebay|wellsfargo|bankofamerica|walmart|icloud|i-cloud)"
+    r"[\-][a-z0-9\-]{2,}"
+    r"|"
+    # cred-first: credential word hyphenated to anything >=3 chars
+    r"(signin|sign-in|secure|login|log-in|verify|account|update|confirm|support|billing|recovery|enable|activate)"
+    r"[\-][a-z0-9\-]{3,}"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def brand_in_subdomain(url: str) -> dict:
+
+    """
+    Detect brand names planted as subdomain labels on an untrusted domain.
+    e.g. facebook.unitedcolleges.net  →  brand='facebook', host_domain='unitedcolleges.net'
+
+    Only fires when the brand label is NOT the registrable domain itself
+    (i.e., it is not facebook.com).
+    """
+    normalized = url if "://" in url else f"https://{url}"
+    hostname   = (urlparse(normalized).hostname or "").lower().rstrip(".")
+    parts      = hostname.split(".")
+    etld1      = ".".join(parts[-2:]) if len(parts) >= 2 else hostname
+
+    if len(parts) < 3:
+        return {"found": False, "brand": None, "host_domain": etld1}
+
+    # Check every non-eTLD label for an exact brand match
+    subdomain_labels = parts[:-2]
+    for label in subdomain_labels:
+        for brand, official in BRAND_MAP.items():
+            if label == brand and etld1 != official:
+                return {"found": True, "brand": brand.title(), "host_domain": etld1}
+    return {"found": False, "brand": None, "host_domain": etld1}
+
+
+def check_hyphenated_creds(url: str) -> dict:
+    """
+    Detect credential-harvesting hostnames that use hyphens to mimic brands.
+    e.g.  appieid-enable.com   drive-google-com.xyz   paypal-secure-login.net
+
+    Scans only the hostname (not path) to avoid false positives on
+    legitimate dashed product URLs.
+    """
+    normalized = url if "://" in url else f"https://{url}"
+    hostname   = (urlparse(normalized).hostname or "").lower().rstrip(".")
+    # Examine labels left of the eTLD
+    parts  = hostname.split(".")
+    labels = ".".join(parts[:-1]) if len(parts) > 1 else hostname
+    match  = _HYPHEN_CRED_RE.search(labels)
+    return {
+        "found":   bool(match),
+        "matched": match.group(0) if match else None,
+    }
 
 
 def check_suspicious_tld(url: str) -> dict:
@@ -725,6 +806,14 @@ def _analyse_url(url: str) -> dict:
     complexity = check_url_complexity(url)
     keywords   = check_phishing_keywords(url)
     ipfs       = check_ipfs_gateway(url)
+    brand_sub  = brand_in_subdomain(url)
+    hyph_creds = check_hyphenated_creds(url)
+
+    # Abused free-host check (unconditional — no keyword/entropy requirement)
+    _norm_host  = (urlparse(url if "://" in url else f"https://{url}").hostname or "").lower().rstrip(".")
+    _host_parts = _norm_host.split(".")
+    _etld1      = ".".join(_host_parts[-2:]) if len(_host_parts) >= 2 else _norm_host
+    abused_host_flag = len(_host_parts) > 2 and _etld1 in ABUSED_FREE_HOSTS
 
     threat_flags = []
     if encoded["base64_found"]:
@@ -747,6 +836,20 @@ def _analyse_url(url: str) -> dict:
         threat_flags.append(f"IPFS gateway detected: {ipfs['gateway']}")
     if infra_abuse_flag:
         threat_flags.append(_infra["reason"])
+    if brand_sub["found"]:
+        threat_flags.append(
+            f"Brand-in-subdomain: '{brand_sub['brand']}' planted as subdomain on "
+            f"'{brand_sub['host_domain']}' — impersonation attack."
+        )
+    if hyph_creds["found"]:
+        threat_flags.append(
+            f"Hyphenated credential domain: '{hyph_creds['matched']}' "
+            f"mimics a brand via hyphen obfuscation."
+        )
+    if abused_host_flag:
+        threat_flags.append(
+            f"Abused free host: subdomain on '{_etld1}' — attacker-controlled hosting."
+        )
 
     # ── ML Inference ─────────────────────────────────────────────────────
     X = extract_features(url)
@@ -754,13 +857,16 @@ def _analyse_url(url: str) -> dict:
     proba      = _model.predict_proba(X)[0]
     confidence = float(proba[label])
 
-    # ── Heuristic flag counter (A-F modules) ─────────────────────────────
+    # ── Heuristic flag counter (A-F modules + new signals) ───────────────
     heuristic_count = sum([
         typo["is_typosquat"],                          # A — Typosquatting
         tld_check["flagged"],                          # B — Suspicious TLD
         keywords["found"],                             # C — Phishing keywords
         complexity["is_complex"],                      # D — URL complexity
         ipfs["is_ipfs"] and not ipfs["whitelisted"],   # E — IPFS gateway
+        brand_sub["found"],                            # G — Brand-in-subdomain
+        hyph_creds["found"],                           # H — Hyphenated creds
+        abused_host_flag,                              # I — Abused free host
     ])
 
     # ── Trust Protocol: ML-malicious but zero heuristic flags → benign ──
@@ -780,7 +886,6 @@ def _analyse_url(url: str) -> dict:
         confidence = max(confidence, 0.85)
 
     # Raw IP host — legitimate services don't use bare IPs as public URLs.
-    # Fires here because the ML underweights is_ip on low-variance data.
     _parsed_host = (urlparse(url if "://" in url else f"https://{url}").hostname or "")
     if re.match(r"^(\d{1,3}\.){3}\d{1,3}$", _parsed_host):
         label = 1
@@ -789,23 +894,86 @@ def _analyse_url(url: str) -> dict:
         if "Raw IP host detected" not in threat_flags:
             threat_flags.append("Raw IP host detected — legitimate services don't use bare IP addresses")
 
-    # ── Heuristic escalation (only if NOT trust-overridden) ─────────────
-    if not trust_override:
-        if label == 0 and len(threat_flags) >= 2:
-            label = 1
-            confidence = max(confidence, 0.70)
+    # ══════════════════════════════════════════════════════════════════════
+    #  HEURISTIC OVERRIDE ENGINE  (v3.5 FN hotfix — 2026-05-19)
+    #  Fires on ML-benign verdicts when deterministic attack signals are
+    #  present that the RF model structurally cannot score above 0.5.
+    #  Each rule is independent; the highest confidence wins.
+    # ══════════════════════════════════════════════════════════════════════
+    _override_conf = 0.0
+    _override_reasons: list[str] = []
 
-        if typo["is_typosquat"]:
-            label = 1
-            confidence = max(confidence, 0.85)
+    # Rule 1 — Typosquatting (edit-distance ≤ 2 to a known brand)
+    if typo["is_typosquat"]:
+        _override_conf = max(_override_conf, 0.88)
+        _override_reasons.append(
+            f"Visual Deception: domain closely mimics {typo['matched_brand']} "
+            f"(edit-distance {typo['edit_distance']})."
+        )
 
-        if tld_check["flagged"] and len(threat_flags) >= 2:
-            label = 1
-            confidence = max(confidence, 0.75)
+    # Rule 2 — Brand planted as subdomain label on untrusted domain
+    #           facebook.unitedcolleges.net, apple.some-phish.tk, etc.
+    if brand_sub["found"]:
+        _override_conf = max(_override_conf, 0.90)
+        _override_reasons.append(
+            f"Brand Subdomain Hijack: '{brand_sub['brand']}' is used as a "
+            f"subdomain on untrusted domain '{brand_sub['host_domain']}' — "
+            f"designed to deceive users scanning only the subdomain."
+        )
 
-        if keywords["found"] and label == 0 and len(threat_flags) >= 1:
-            label = 1
-            confidence = max(confidence, 0.72)
+    # Rule 3 — Hyphenated credential / brand-impersonation in hostname
+    #           appieid-enable.com, drive-google-com.xyz, paypal-secure.net
+    if hyph_creds["found"]:
+        _override_conf = max(_override_conf, 0.87)
+        _override_reasons.append(
+            f"Hyphenated Impersonation: hostname segment "
+            f"'{hyph_creds['matched']}' mimics a trusted brand via "
+            f"hyphen-obfuscation — a classic credential-harvesting pattern."
+        )
+
+    # Rule 4 — Subdomain on known abused free-hosting platform
+    if abused_host_flag:
+        _override_conf = max(_override_conf, 0.85)
+        _override_reasons.append(
+            f"Abused Free Host: subdomain on '{_etld1}' where all subdomains "
+            f"are attacker-controlled — high-risk hosting vector."
+        )
+
+    # Rule 5 — Suspicious TLD  +  any phishing keyword  →  compound signal
+    if tld_check["flagged"] and keywords["found"]:
+        _override_conf = max(_override_conf, 0.83)
+        _override_reasons.append(
+            f"Compound signal: high-abuse TLD '{tld_check['tld']}' combined "
+            f"with credential-harvesting keywords — strong phishing indicator."
+        )
+
+    # Rule 6 — Any single suspicious TLD (standalone escalation)
+    if tld_check["flagged"] and not keywords["found"]:
+        _override_conf = max(_override_conf, 0.76)
+        _override_reasons.append(
+            f"Risky TLD: '{tld_check['tld']}' is disproportionately "
+            f"associated with phishing campaigns."
+        )
+
+    # Rule 7 — Phishing keywords present + at least one other flag
+    if keywords["found"] and len(threat_flags) >= 2:
+        _override_conf = max(_override_conf, 0.78)
+        kw_list = ", ".join(keywords["matched_keywords"])
+        _override_reasons.append(
+            f"Credential-harvesting keywords ({kw_list}) combined with "
+            f"{len(threat_flags) - 1} additional threat signal(s)."
+        )
+
+    # Apply override: flip any ML-benign prediction when engine fires
+    if _override_conf > 0.0:
+        label = 1
+        trust_override = False
+        confidence = max(confidence, _override_conf)
+
+    # ── Legacy escalation guard: ≥2 flags with no specific rule matched ──
+    if not trust_override and label == 0 and len(threat_flags) >= 2:
+        label = 1
+        confidence = max(confidence, 0.70)
 
     # ── IPFS escalation: overrides Trust Protocol — always malicious ────
     if ipfs["is_ipfs"] and not ipfs["whitelisted"]:
@@ -825,6 +993,11 @@ def _analyse_url(url: str) -> dict:
     #  Trust-override → Heuristics (A-E) → Crypto/vuln → Model fallback
     # ══════════════════════════════════════════════════════════════════════
     reasons = []
+
+    # ── PRIORITY 0: Override engine reasons (highest specificity) ──────────
+    # These are prepended so the most specific attack description leads the output.
+    if _override_reasons and not trust_override:
+        reasons.extend(_override_reasons)
 
     if trust_override:
         reasons.append(
@@ -874,6 +1047,25 @@ def _analyse_url(url: str) -> dict:
                 f"content that bypasses traditional domain filters.{cid_preview}"
             )
 
+        # G — Brand-in-subdomain (only if not already in override reasons)
+        if brand_sub["found"] and not _override_reasons:
+            reasons.append(
+                f"Brand Subdomain Hijack: '{brand_sub['brand']}' planted as a "
+                f"subdomain on '{brand_sub['host_domain']}'."
+            )
+
+        # H — Hyphenated credential hostname (only if not already in override reasons)
+        if hyph_creds["found"] and not _override_reasons:
+            reasons.append(
+                f"Hyphenated Impersonation: '{hyph_creds['matched']}' in hostname."
+            )
+
+        # I — Abused free host (only if not already in override reasons)
+        if abused_host_flag and not _override_reasons:
+            reasons.append(
+                f"Abused Free Host: subdomain on '{_etld1}'."
+            )
+
     # ── SECONDARY: Crypto / vuln details ────────────────────────────────
     if not trust_override:
         if encoded["base64_found"]:
@@ -921,6 +1113,11 @@ def _analyse_url(url: str) -> dict:
             "trust_override":         trust_override,
             "ipfs_gateway":           ipfs,
             "infrastructure_abuse":   _infra,
+            "brand_in_subdomain":     brand_sub,
+            "hyphenated_creds":       hyph_creds,
+            "abused_free_host":       {"flagged": abused_host_flag, "host": _etld1 if abused_host_flag else None},
+            "override_engine_fired":  _override_conf > 0.0,
+            "override_confidence":    round(_override_conf * 100, 2),
         },
     }
 
