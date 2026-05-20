@@ -19,14 +19,22 @@ from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
+# SlowAPIMiddleware intentionally NOT used — it resolves IP from raw socket
+# (always the HF Spaces proxy), bypassing our key function. Decorator-based
+# limiting with app.state.limiter is used instead.
 
 from predictor import predict_url
 
 # -- Rate Limiter -------------------------------------------------------------
-# Key function: honours X-Forwarded-For set by HF Spaces / Vercel proxies.
+# Priority order for client IP behind reverse proxies (HF Spaces, Cloudflare):
+#   1. X-Real-IP      — set by nginx / Cloudflare with the true client IP
+#   2. X-Forwarded-For first entry — set by most load balancers
+#   3. raw socket IP  — fallback (will be proxy IP on HF Spaces)
 def _get_client_ip(request: Request) -> str:
-    forwarded_for = request.headers.get("X-Forwarded-For")
+    real_ip = request.headers.get("X-Real-IP", "").strip()
+    if real_ip:
+        return real_ip
+    forwarded_for = request.headers.get("X-Forwarded-For", "").strip()
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
     return get_remote_address(request)
@@ -41,10 +49,10 @@ app = FastAPI(
     version="3.5.0",
 )
 
-# Wire rate-limiter into the app
+# Wire rate-limiter — decorator-based approach (no SlowAPIMiddleware).
+# The exception handler converts RateLimitExceeded into a 429 JSON response.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -161,7 +169,7 @@ class SecurityAnalysis(BaseModel):
 # -- Endpoints ----------------------------------------------------------------
 
 @app.post("/predict", response_model=PredictionResponse)
-@limiter.limit("10/minute")
+@limiter.limit("5/minute")
 def predict(request: Request, req: URLRequest):
     """
     Analyse a URL for phishing indicators.
