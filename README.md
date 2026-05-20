@@ -201,7 +201,7 @@ Phishing_Detection_MVP/
 
 
 
-# Huggingface space API requirement
+# Huggingface space API key requirement
 ---
 title: Phishing Detection MVP
 emoji: 🛡️
