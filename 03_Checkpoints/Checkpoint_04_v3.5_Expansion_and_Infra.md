@@ -133,3 +133,5 @@ Modules run sequentially on the final URL (post-shortener expansion). Each modul
 - [x] FN error analysis complete — 18,005 FNs isolated (8.5% of malicious); blind spots: open redirect URL-in-query (FN ranks 4,10) and unrepresented TLD risk. Dataset label noise confirmed for ranks 1,3,5-9,13,15 (structurally benign sites).
 - [x] Two new features added to retrain_model.py and predictor.py: `url_in_query` (open redirect detection), `tld_risk` (ordinal 0-2 TLD abuse score). Total feature count: 13.
 - [x] Model retrained — phishing_model_v3_5.joblib updated. ROC-AUC: 0.9645, FN count reduced from 18,005 to 4,305 on held-out test set (20%). FN patch spot-checks: open redirect ✓, .tk TLD ✓. 2026-05-19 10:53
+- [x] Heuristic Override Engine implemented — 9/9 smoke tests pass. 2026-05-19 13:18
+- [ ] Step 6 — Rate Limiting & API Security: slowapi==0.1.9 added to requirements.txt. /predict capped at 10 req/min/IP, /health at 60 req/min/IP. X-Forwarded-For-aware key func handles HF Spaces proxy. 429 responses return JSON via _rate_limit_exceeded_handler. Initiated 2026-05-20 13:07

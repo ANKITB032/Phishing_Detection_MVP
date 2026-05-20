@@ -11,13 +11,27 @@ Endpoints:
 
 from typing import Any, List, Optional, Union
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
-from fastapi.responses import RedirectResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from predictor import predict_url
+
+# -- Rate Limiter -------------------------------------------------------------
+# Key function: honours X-Forwarded-For set by HF Spaces / Vercel proxies.
+def _get_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return get_remote_address(request)
+
+limiter = Limiter(key_func=_get_client_ip, default_limits=["200/day"])
 
 # -- App Setup ----------------------------------------------------------------
 
@@ -26,6 +40,11 @@ app = FastAPI(
     description="Phishing URL detection with cryptographic payload analysis",
     version="3.5.0",
 )
+
+# Wire rate-limiter into the app
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -142,24 +161,28 @@ class SecurityAnalysis(BaseModel):
 # -- Endpoints ----------------------------------------------------------------
 
 @app.post("/predict", response_model=PredictionResponse)
-def predict(req: URLRequest):
+@limiter.limit("10/minute")
+def predict(request: Request, req: URLRequest):
     """
     Analyse a URL for phishing indicators.
+
+    Rate limit: 10 requests / minute per IP.
 
     Pipeline (Modules A-F):
       0. Trusted-domain whitelist fast path
       1. A: Typosquatting  B: Suspicious TLD  C: Phishing keywords
          D: URL complexity  E: IPFS gateway  F: Shortener expansion
       2. ML feature extraction -> Random Forest classification
-      3. Trust Protocol override / heuristic escalation
+      3. Trust Protocol override / heuristic escalation / Override Engine
     """
     return predict_url(req.url)
 
 
 @app.get("/health")
-def health():
-    """Readiness / liveness probe."""
-    return {"status": "ok", "model": "Random Forest (AUC 0.9648)"}
+@limiter.limit("60/minute")
+def health(request: Request):
+    """Readiness / liveness probe. Rate limit: 60/min."""
+    return {"status": "ok", "model": "Random Forest (AUC 0.9645)"}
 
 @app.get("/")
 def read_root():
