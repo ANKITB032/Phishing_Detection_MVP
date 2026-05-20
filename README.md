@@ -194,3 +194,22 @@ Phishing_Detection_MVP/
 | Raw IP host (`http://1.2.3.4/paypal/`) | Hard override | ≥ 80% |
 | Encoded payloads (Base64/hex in query) | Crypto analysis module | Threat flag |
 | SQL injection / XSS / path traversal in URL | Vuln pattern scanner | Threat flag |
+
+
+
+
+
+
+
+# Huggingface space API requirement
+---
+title: Phishing Detection MVP
+emoji: 🛡️
+colorFrom: blue
+colorTo: red
+sdk: docker
+pinned: false
+---
+
+# Phishing Detection MVP
+*(The rest of your newly generated README content goes here...)*
