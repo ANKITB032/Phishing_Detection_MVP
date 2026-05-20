@@ -1,12 +1,15 @@
-# Huggingface space API key requirement
 ---
-title: Phishing Detection MVP
+title: Phishing Detection API
 emoji: 🛡️
 colorFrom: blue
-colorTo: red
+colorTo: indigo
 sdk: docker
 pinned: false
 ---
+
+# PhishGuard MVP API
+This backend powers the Phishing Detection application.
+
 
 # PhishGuard MVP — v3.5.0
 
@@ -204,10 +207,3 @@ Phishing_Detection_MVP/
 | Raw IP host (`http://1.2.3.4/paypal/`) | Hard override | ≥ 80% |
 | Encoded payloads (Base64/hex in query) | Crypto analysis module | Threat flag |
 | SQL injection / XSS / path traversal in URL | Vuln pattern scanner | Threat flag |
-
-
-
-
-
-
-
