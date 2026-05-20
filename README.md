@@ -1,3 +1,13 @@
+# Huggingface space API key requirement
+---
+title: Phishing Detection MVP
+emoji: 🛡️
+colorFrom: blue
+colorTo: red
+sdk: docker
+pinned: false
+---
+
 # PhishGuard MVP — v3.5.0
 
 AI-powered phishing URL detection combining a trained Random Forest classifier with a seven-rule deterministic Heuristic Override Engine.
@@ -201,15 +211,3 @@ Phishing_Detection_MVP/
 
 
 
-# Huggingface space API key requirement
----
-title: Phishing Detection MVP
-emoji: 🛡️
-colorFrom: blue
-colorTo: red
-sdk: docker
-pinned: false
----
-
-# Phishing Detection MVP
-*(The rest of your newly generated README content goes here...)*
