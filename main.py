@@ -11,7 +11,7 @@ Endpoints:
 
 from typing import Any, List, Optional, Union
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -174,16 +174,25 @@ def predict(request: Request, req: URLRequest):
     """
     Analyse a URL for phishing indicators.
 
-    Rate limit: 10 requests / minute per IP.
+    Rate limit: 5 requests / minute per IP.
+    Input constraints: max 2048 chars, no null bytes, must be non-empty.
 
-    Pipeline (Modules A-F):
+    Pipeline (Modules A-F + Override Engine):
       0. Trusted-domain whitelist fast path
       1. A: Typosquatting  B: Suspicious TLD  C: Phishing keywords
          D: URL complexity  E: IPFS gateway  F: Shortener expansion
+         G: Brand-in-subdomain  H: Hyphenated creds  I: Abused free host
       2. ML feature extraction -> Random Forest classification
-      3. Trust Protocol override / heuristic escalation / Override Engine
+      3. Heuristic Override Engine (7 deterministic rules)
     """
-    return predict_url(req.url)
+    url = req.url.strip()
+    if not url:
+        raise HTTPException(status_code=422, detail="URL must not be empty.")
+    if len(url) > 2048:
+        raise HTTPException(status_code=422, detail=f"URL exceeds maximum length of 2048 characters ({len(url)} received).")
+    if "\x00" in url or "%00" in url:
+        raise HTTPException(status_code=422, detail="URL contains null bytes.")
+    return predict_url(url)
 
 
 @app.get("/health")

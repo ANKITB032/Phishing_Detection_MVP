@@ -134,4 +134,29 @@ Modules run sequentially on the final URL (post-shortener expansion). Each modul
 - [x] Two new features added to retrain_model.py and predictor.py: `url_in_query` (open redirect detection), `tld_risk` (ordinal 0-2 TLD abuse score). Total feature count: 13.
 - [x] Model retrained — phishing_model_v3_5.joblib updated. ROC-AUC: 0.9645, FN count reduced from 18,005 to 4,305 on held-out test set (20%). FN patch spot-checks: open redirect ✓, .tk TLD ✓. 2026-05-19 10:53
 - [x] Heuristic Override Engine implemented — 9/9 smoke tests pass. 2026-05-19 13:18
-- [ ] Step 6 — Rate Limiting & API Security: slowapi==0.1.9 added to requirements.txt. /predict capped at 10 req/min/IP, /health at 60 req/min/IP. X-Forwarded-For-aware key func handles HF Spaces proxy. 429 responses return JSON via _rate_limit_exceeded_handler. Initiated 2026-05-20 13:07
+- [x] Step 6 COMPLETE — Rate Limiting & API Security: slowapi==0.1.9, /predict 5 req/min/IP, /health 60 req/min/IP. SlowAPIMiddleware removed (proxy IP collision bug). Decorator-based limiting with X-Real-IP + X-Forwarded-For key func. 429 confirmed in live HF Spaces test. 2026-05-20 15:29
+
+---
+
+## MVP Final Status — v3.5.0
+
+All planned roadmap steps are complete. The MVP is production-hardened.
+
+| Step | Task | Status |
+|------|------|--------|
+| 1 | Data cleaning + deduplication | ✓ |
+| 2 | Feature extraction (v3.0 baseline, 10 features) | ✓ |
+| 3 | Model training — RF, AUC 0.9648 | ✓ |
+| 4 | FastAPI backend + Pydantic schema | ✓ |
+| 5 | v3.5 expansion — infra abuse, shortener, IPFS, typosquat, brand-sub, hyphen-cred | ✓ |
+| 5a | FN error analysis — 2 new ML features (url_in_query, tld_risk), AUC 0.9645 | ✓ |
+| 5b | Heuristic Override Engine — 7 deterministic rules, 9/9 smoke tests | ✓ |
+| 6 | Rate limiting — slowapi, 5 req/min, proxy-aware IP extraction | ✓ |
+
+## Remaining Optional Hardening (Post-MVP)
+
+- [x] **Input sanitisation** — reject URLs > 2048 chars or containing null bytes (422 JSON response). 2026-05-20 15:30
+- [x] **README update** — full architecture diagram, API contract, feature table, deployment guide, detection coverage table. 2026-05-20 15:30
+- [ ] **Tranco top-1M pre-filter** — whitelist top 1M domains before heuristic pipeline to reduce false-positive load.
+- [ ] **Auth / API key** — `X-API-Key` header check via FastAPI `Security` dependency for private deployments.
+- [ ] **Structured logging** — `python-json-logger` for HF Spaces log aggregation.
