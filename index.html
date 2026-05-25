@@ -762,6 +762,67 @@
     .verdict-malicious .threat-flag .flag-dot { background: var(--red);  }
     .verdict-safe     .threat-flag .flag-dot  { background: var(--cyan); }
 
+    /* ── Nested flag content ─────────────────────────────── */
+    .flag-content {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
+      flex: 1;
+      min-width: 0;
+    }
+
+    .flag-key {
+      color: var(--cyan);
+      font-weight: 700;
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+      word-break: break-word;
+    }
+
+    .flag-value {
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    /* Sub-list for nested objects/arrays */
+    .flag-sublist {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: var(--space-1);
+      padding-left: var(--space-4);
+      border-left: 1px solid var(--border);
+    }
+
+    .flag-subitem {
+      display: flex;
+      gap: var(--space-2);
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .flag-subitem .sub-key {
+      color: var(--text-dim);
+      font-weight: 700;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    .flag-subitem .sub-val {
+      color: var(--text-muted);
+    }
+
+    /* Scalar flag (no key — array-of-strings case) */
+    .flag-scalar {
+      color: var(--text);
+      font-size: 0.75rem;
+      word-break: break-word;
+    }
+
     .no-flags {
       font-family: var(--font-mono);
       font-size: 0.75rem;
@@ -1250,22 +1311,147 @@
       // Analysed URL
       analysedUrl.textContent = data.url || urlInput.value.trim();
 
-      // Security Analysis flags
-      const flags = data.security_analysis
-        ? (Array.isArray(data.security_analysis)
-            ? data.security_analysis
-            : Object.entries(data.security_analysis).map(([k, v]) => `${k}: ${v}`))
-        : [];
-
+      // Security Analysis flags — full recursive renderer
+      const sa = data.security_analysis;
       analysisBody.innerHTML = "";
-      if (flags.length > 0) {
-        flagCountBadge.textContent = `${flags.length} flag${flags.length > 1 ? "s" : ""}`;
-        flags.forEach(flag => {
-          const item = document.createElement("div");
-          item.className = "threat-flag";
-          item.setAttribute("role", "listitem");
-          item.innerHTML = `<span class="flag-dot" aria-hidden="true"></span><span>${escapeHtml(String(flag))}</span>`;
-          analysisBody.appendChild(item);
+
+      /**
+       * Render a single value node into a DocumentFragment.
+       * Handles: string/number/boolean (scalar), Array, plain Object.
+       * Returns a DOM element or fragment ready to append.
+       */
+      function renderValue(val) {
+        // Null / undefined
+        if (val === null || val === undefined) {
+          const s = document.createElement("span");
+          s.className = "sub-val";
+          s.textContent = "null";
+          return s;
+        }
+        // Plain scalar
+        if (typeof val !== "object") {
+          const s = document.createElement("span");
+          s.className = "sub-val";
+          s.textContent = String(val);
+          return s;
+        }
+        // Array
+        if (Array.isArray(val)) {
+          if (val.length === 0) {
+            const s = document.createElement("span");
+            s.className = "sub-val";
+            s.textContent = "(empty)";
+            return s;
+          }
+          const list = document.createElement("div");
+          list.className = "flag-sublist";
+          val.forEach(item => {
+            const row = document.createElement("div");
+            row.className = "flag-subitem";
+            if (item !== null && typeof item === "object") {
+              row.appendChild(renderValue(item));
+            } else {
+              const v = document.createElement("span");
+              v.className = "sub-val";
+              v.textContent = String(item);
+              row.appendChild(v);
+            }
+            list.appendChild(row);
+          });
+          return list;
+        }
+        // Plain object — render as sub-list of key: value rows
+        const entries = Object.entries(val);
+        if (entries.length === 0) {
+          const s = document.createElement("span");
+          s.className = "sub-val";
+          s.textContent = "{}";
+          return s;
+        }
+        const list = document.createElement("div");
+        list.className = "flag-sublist";
+        entries.forEach(([k, v]) => {
+          const row = document.createElement("div");
+          row.className = "flag-subitem";
+          const keyEl = document.createElement("span");
+          keyEl.className = "sub-key";
+          keyEl.textContent = k + ":";
+          row.appendChild(keyEl);
+          // Recurse for nested objects/arrays; inline scalars
+          if (v !== null && typeof v === "object") {
+            const nested = document.createElement("div");
+            nested.style.flex = "1";
+            nested.appendChild(renderValue(v));
+            row.appendChild(nested);
+          } else {
+            const valEl = document.createElement("span");
+            valEl.className = "sub-val";
+            valEl.textContent = String(v);
+            row.appendChild(valEl);
+          }
+          list.appendChild(row);
+        });
+        return list;
+      }
+
+      /**
+       * Build a .threat-flag card for one top-level entry.
+       * key  = string key (or null for array-of-scalars)
+       * val  = the value at that key
+       */
+      function makeFlagCard(key, val) {
+        const card = document.createElement("div");
+        card.className = "threat-flag";
+        card.setAttribute("role", "listitem");
+
+        const dot = document.createElement("span");
+        dot.className = "flag-dot";
+        dot.setAttribute("aria-hidden", "true");
+        card.appendChild(dot);
+
+        const content = document.createElement("div");
+        content.className = "flag-content";
+
+        if (key !== null) {
+          const keyEl = document.createElement("div");
+          keyEl.className = "flag-key";
+          keyEl.textContent = key.replace(/_/g, " ");
+          content.appendChild(keyEl);
+        }
+
+        if (val !== null && typeof val === "object") {
+          content.appendChild(renderValue(val));
+        } else {
+          const valEl = document.createElement("div");
+          valEl.className = "flag-scalar";
+          valEl.textContent = String(val);
+          content.appendChild(valEl);
+        }
+
+        card.appendChild(content);
+        return card;
+      }
+
+      // Build entries from security_analysis (object or array)
+      let flagEntries = []; // [{key, val}]
+      if (sa) {
+        if (Array.isArray(sa)) {
+          sa.forEach(item => {
+            if (item !== null && typeof item === "object") {
+              Object.entries(item).forEach(([k, v]) => flagEntries.push({ key: k, val: v }));
+            } else {
+              flagEntries.push({ key: null, val: item });
+            }
+          });
+        } else if (typeof sa === "object") {
+          Object.entries(sa).forEach(([k, v]) => flagEntries.push({ key: k, val: v }));
+        }
+      }
+
+      if (flagEntries.length > 0) {
+        flagCountBadge.textContent = `${flagEntries.length} flag${flagEntries.length > 1 ? "s" : ""}`;
+        flagEntries.forEach(({ key, val }) => {
+          analysisBody.appendChild(makeFlagCard(key, val));
         });
       } else {
         flagCountBadge.textContent = "0 flags";
