@@ -4,458 +4,1407 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PhishGuard</title>
+  <title>PhishGuard — AI-Powered Phishing URL Detection</title>
+  <meta name="description" content="PhishGuard uses a trained Random Forest model to detect phishing URLs in real time with 91% accuracy and ROC-AUC 0.96." />
+
+  <!-- IBM Plex fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@300;400;600&display=swap"
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap"
     rel="stylesheet" />
+
   <style>
-    *,
-    *::before,
-    *::after {
+    /* ═══════════════════════════════════════════════════════
+       DESIGN TOKENS
+    ═══════════════════════════════════════════════════════ */
+    :root {
+      /* Backgrounds */
+      --bg:           #0F172A;
+      --surface:      #1E293B;
+      --surface-deep: #162032;
+      --border:       #334155;
+      --border-soft:  #1E293B;
+
+      /* Accent / status */
+      --cyan:         #06B6D4;
+      --cyan-dim:     rgba(6, 182, 212, 0.15);
+      --cyan-glow:    rgba(6, 182, 212, 0.35);
+      --red:          #EF4444;
+      --red-dim:      rgba(239, 68, 68, 0.12);
+      --red-glow:     rgba(239, 68, 68, 0.35);
+      --amber:        #F59E0B;
+      --amber-dim:    rgba(245, 158, 11, 0.12);
+      --amber-glow:   rgba(245, 158, 11, 0.35);
+
+      /* Text */
+      --text:         #F8FAFC;
+      --text-muted:   #94A3B8;
+      --text-dim:     #64748B;
+
+      /* Typography */
+      --font-sans:    'IBM Plex Sans', sans-serif;
+      --font-mono:    'IBM Plex Mono', monospace;
+
+      /* Spacing (8px grid) */
+      --space-1:  4px;
+      --space-2:  8px;
+      --space-3:  12px;
+      --space-4:  16px;
+      --space-5:  20px;
+      --space-6:  24px;
+      --space-8:  32px;
+      --space-10: 40px;
+      --space-12: 48px;
+      --space-16: 64px;
+
+      /* Borders */
+      --radius-sm: 4px;
+      --radius:    6px;
+      --radius-lg: 10px;
+
+      /* Transitions */
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       RESET & BASE
+    ═══════════════════════════════════════════════════════ */
+    *, *::before, *::after {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
 
-    :root {
-      --bg: #080c10;
-      --surface: #0d1117;
-      --border: #1e2d3d;
-      --accent: #00e5ff;
-      --danger: #ff3b5c;
-      --safe: #00e676;
-      --muted: #4a6070;
-      --text: #c9d8e3;
-      --text-dim: #546e7a;
-      --glow-safe: 0 0 24px rgba(0, 230, 118, .35);
-      --glow-danger: 0 0 24px rgba(255, 59, 92, .35);
+    html {
+      scroll-behavior: smooth;
     }
 
     body {
-      font-family: 'IBM Plex Sans', sans-serif;
+      font-family: var(--font-sans);
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
+      font-size: 16px;
+      line-height: 1.5;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 2rem;
       overflow-x: hidden;
     }
 
-    /* grid bg */
+    /* Subtle dot-grid background */
     body::before {
       content: '';
       position: fixed;
       inset: 0;
       background-image:
-        linear-gradient(rgba(0, 229, 255, .03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 229, 255, .03) 1px, transparent 1px);
-      background-size: 40px 40px;
+        radial-gradient(circle, rgba(6, 182, 212, 0.06) 1px, transparent 1px);
+      background-size: 32px 32px;
       pointer-events: none;
       z-index: 0;
     }
 
-    .wrap {
+    /* Ambient glow blobs */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 400px;
+      background: radial-gradient(ellipse, rgba(6, 182, 212, 0.07) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       FOCUS RINGS — accessibility critical
+    ═══════════════════════════════════════════════════════ */
+    :focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 3px;
+      border-radius: var(--radius-sm);
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       LAYOUT WRAPPER
+    ═══════════════════════════════════════════════════════ */
+    .page {
       position: relative;
       z-index: 1;
       width: 100%;
-      max-width: 640px;
+      max-width: 780px;
+      padding: var(--space-12) var(--space-6) var(--space-10);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-8);
     }
 
-    header {
-      margin-bottom: 3rem;
+    /* ═══════════════════════════════════════════════════════
+       HEADER / HERO
+    ═══════════════════════════════════════════════════════ */
+    .hero {
       text-align: center;
     }
 
-    .logo {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: .75rem;
+    .logo-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
       font-weight: 700;
-      letter-spacing: .3em;
-      color: var(--accent);
+      letter-spacing: 0.2em;
       text-transform: uppercase;
-      margin-bottom: 1rem;
-      opacity: .8;
+      color: var(--cyan);
+      background: var(--cyan-dim);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      border-radius: 100px;
+      padding: var(--space-1) var(--space-3);
+      margin-bottom: var(--space-5);
+    }
+
+    .logo-badge svg {
+      flex-shrink: 0;
     }
 
     h1 {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: clamp(1.8rem, 5vw, 2.6rem);
+      font-family: var(--font-mono);
+      font-size: clamp(2rem, 5vw, 3rem);
       font-weight: 700;
-      color: #fff;
       line-height: 1.1;
-      letter-spacing: -.02em;
+      letter-spacing: -0.03em;
+      color: var(--text);
     }
 
-    h1 span {
-      color: var(--accent);
+    h1 .accent {
+      color: var(--cyan);
     }
 
-    .subtitle {
-      margin-top: .75rem;
-      font-size: .875rem;
-      color: var(--text-dim);
+    .hero-tagline {
+      margin-top: var(--space-3);
+      font-size: 1rem;
+      color: var(--text-muted);
       font-weight: 300;
-      letter-spacing: .02em;
+      letter-spacing: 0.01em;
+      max-width: 480px;
+      margin-left: auto;
+      margin-right: auto;
     }
 
-    .card {
+    /* ═══════════════════════════════════════════════════════
+       SCAN CARD
+    ═══════════════════════════════════════════════════════ */
+    .scan-card {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 2rem;
+      border-radius: var(--radius-lg);
+      padding: var(--space-8);
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Subtle top accent line */
+    .scan-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+      opacity: 0.6;
+    }
+
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
     }
 
     .field-label {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: .7rem;
-      letter-spacing: .15em;
-      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
       text-transform: uppercase;
-      margin-bottom: .5rem;
-      display: block;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .field-label svg {
+      opacity: 0.7;
     }
 
     .input-row {
       display: flex;
-      gap: .75rem;
+      gap: var(--space-3);
+      align-items: stretch;
     }
 
-    input[type="text"] {
+    #url-input {
       flex: 1;
-      background: var(--bg);
+      min-width: 0;
+      background: var(--surface-deep);
       border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: .75rem 1rem;
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: .875rem;
+      border-radius: var(--radius);
+      padding: var(--space-3) var(--space-4);
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
       color: var(--text);
       outline: none;
-      transition: border-color .2s;
+      transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+      height: 48px;
     }
 
-    input[type="text"]::placeholder {
+    #url-input::placeholder {
       color: var(--text-dim);
     }
 
-    input[type="text"]:focus {
-      border-color: var(--accent);
+    #url-input:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.15);
     }
 
-    button {
-      background: var(--accent);
-      color: #000;
+    #scan-btn {
+      background: var(--cyan);
+      color: #0F172A;
       border: none;
-      border-radius: 4px;
-      padding: .75rem 1.4rem;
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: .8rem;
+      border-radius: var(--radius);
+      padding: 0 var(--space-6);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
       font-weight: 700;
-      letter-spacing: .08em;
-      cursor: pointer;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
-      transition: opacity .15s, transform .1s;
+      cursor: pointer;
       white-space: nowrap;
-    }
-
-    button:hover {
-      opacity: .85;
-    }
-
-    button:active {
-      transform: scale(.97);
-    }
-
-    button:disabled {
-      opacity: .4;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    /* scanning pulse animation */
-    button.scanning {
-      opacity: 1 !important;
-      animation: btnPulse 1.4s ease-in-out infinite;
-      background: linear-gradient(135deg, var(--accent), #007cf0);
-      box-shadow: 0 0 18px rgba(0, 229, 255, .3);
-    }
-
-    @keyframes btnPulse {
-      0%, 100% { transform: scale(1); box-shadow: 0 0 12px rgba(0, 229, 255, .2); }
-      50%      { transform: scale(1.06); box-shadow: 0 0 24px rgba(0, 229, 255, .5); }
-    }
-
-    /* result */
-    #result {
-      margin-top: 1.5rem;
-      display: none;
-    }
-
-    .result-inner {
-      border-radius: 4px;
-      border: 1px solid var(--border);
-      padding: 1.25rem 1.5rem;
-      display: flex;
+      min-height: 48px;
+      min-width: 120px;
+      display: inline-flex;
       align-items: center;
-      gap: 1.25rem;
-      /* initial state for anime.js spring — set via JS */
-      opacity: 0;
-      transform: translateY(30px) scale(.96);
-    }
-
-    /* breathing glow — safe */
-    .result-inner.safe {
-      border-color: var(--safe);
-      background: rgba(0, 230, 118, .05);
-      animation: glowSafe 2.4s ease-in-out infinite;
-    }
-
-    @keyframes glowSafe {
-      0%, 100% { box-shadow: 0 0 16px rgba(0, 230, 118, .2); }
-      50%      { box-shadow: 0 0 32px rgba(0, 230, 118, .45); }
-    }
-
-    /* breathing glow — danger */
-    .result-inner.danger {
-      border-color: var(--danger);
-      background: rgba(255, 59, 92, .05);
-      animation: glowDanger 2.4s ease-in-out infinite;
-    }
-
-    @keyframes glowDanger {
-      0%, 100% { box-shadow: 0 0 16px rgba(255, 59, 92, .2); }
-      50%      { box-shadow: 0 0 32px rgba(255, 59, 92, .45); }
-    }
-
-    .verdict-icon {
-      font-size: 2rem;
-      line-height: 1;
-      flex-shrink: 0;
-    }
-
-    .verdict-label {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 1.1rem;
-      font-weight: 700;
-      letter-spacing: .04em;
-    }
-
-    .safe .verdict-label {
-      color: var(--safe);
-    }
-
-    .danger .verdict-label {
-      color: var(--danger);
-    }
-
-    .verdict-conf {
-      font-size: .78rem;
-      color: var(--text-dim);
-      margin-top: .2rem;
-      font-family: 'IBM Plex Mono', monospace;
-    }
-
-    .verdict-reason {
-      font-size: .75rem;
-      color: var(--text);
-      margin-top: .5rem;
-      font-family: 'IBM Plex Mono', monospace;
-      line-height: 1.5;
-      padding-top: .4rem;
-      border-top: 1px solid var(--border);
+      justify-content: center;
+      gap: var(--space-2);
+      transition: opacity 0.15s, transform 0.1s, box-shadow 0.2s;
+      position: relative;
       overflow: hidden;
     }
 
-    .verdict-reason::before {
-      content: '› ';
-      color: var(--accent);
+    #scan-btn:hover:not(:disabled) {
+      opacity: 0.9;
+      box-shadow: 0 0 20px var(--cyan-glow);
+    }
+
+    #scan-btn:active:not(:disabled) {
+      transform: scale(0.97);
+    }
+
+    #scan-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #scan-btn:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 3px;
+    }
+
+    /* Scanning pulse */
+    #scan-btn.scanning {
+      animation: btnPulse 1.4s ease-in-out infinite;
+      opacity: 1 !important;
+    }
+
+    @keyframes btnPulse {
+      0%, 100% { box-shadow: 0 0 10px var(--cyan-glow); }
+      50%       { box-shadow: 0 0 28px rgba(6, 182, 212, 0.6); }
+    }
+
+    /* Spinner inside button */
+    .spinner {
+      display: none;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(15, 23, 42, 0.4);
+      border-top-color: #0F172A;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    #scan-btn.scanning .spinner { display: block; }
+    #scan-btn.scanning .btn-icon { display: none; }
+
+    /* ═══════════════════════════════════════════════════════
+       ERROR STATE
+    ═══════════════════════════════════════════════════════ */
+    #error-panel {
+      display: none;
+      margin-top: var(--space-4);
+      padding: var(--space-4) var(--space-5);
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: var(--radius);
+      gap: var(--space-3);
+      align-items: flex-start;
+    }
+
+    #error-panel.visible {
+      display: flex;
+    }
+
+    .error-icon {
+      flex-shrink: 0;
+      color: var(--red);
+      margin-top: 2px;
+    }
+
+    .error-body {
+      flex: 1;
+    }
+
+    .error-title {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--red);
+      margin-bottom: var(--space-1);
+    }
+
+    .error-detail {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       SKELETON LOADING STATE
+    ═══════════════════════════════════════════════════════ */
+    #skeleton {
+      display: none;
+      margin-top: var(--space-6);
+      background: var(--surface-deep);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-lg);
+      padding: var(--space-6);
+      gap: var(--space-4);
+      flex-direction: column;
+    }
+
+    #skeleton.visible {
+      display: flex;
+    }
+
+    .skel-row {
+      display: flex;
+      gap: var(--space-4);
+      align-items: center;
+    }
+
+    .skel-circle {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--surface);
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .skel-lines {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .skel-line {
+      height: 12px;
+      border-radius: 4px;
+      background: var(--surface);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .skel-line.short  { width: 40%; }
+    .skel-line.medium { width: 65%; }
+    .skel-line.long   { width: 85%; }
+    .skel-line.full   { width: 100%; }
+
+    /* Shimmer animation */
+    .skel-circle::after,
+    .skel-line::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(148, 163, 184, 0.08) 50%,
+        transparent 100%
+      );
+      animation: shimmer 1.6s ease-in-out infinite;
+    }
+
+    @keyframes shimmer {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    .skel-bar {
+      height: 8px;
+      border-radius: 100px;
+      background: var(--surface);
+      width: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .skel-bar::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(148, 163, 184, 0.08) 50%,
+        transparent 100%
+      );
+      animation: shimmer 1.6s ease-in-out infinite;
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       RESULT CARD
+    ═══════════════════════════════════════════════════════ */
+    #result-panel {
+      display: none;
+      margin-top: var(--space-6);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      opacity: 0;
+      transform: translateY(24px) scale(0.97);
+      transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+    }
+
+    #result-panel.visible {
+      display: block;
+    }
+
+    #result-panel.animate-in {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    /* Verdict colour themes */
+    #result-panel.verdict-safe {
+      border-color: rgba(6, 182, 212, 0.4);
+      box-shadow: 0 0 32px rgba(6, 182, 212, 0.12);
+    }
+
+    #result-panel.verdict-malicious {
+      border-color: rgba(239, 68, 68, 0.4);
+      box-shadow: 0 0 32px rgba(239, 68, 68, 0.12);
+    }
+
+    #result-panel.verdict-warning {
+      border-color: rgba(245, 158, 11, 0.4);
+      box-shadow: 0 0 32px rgba(245, 158, 11, 0.12);
+    }
+
+    /* Verdict header stripe */
+    .verdict-header {
+      padding: var(--space-5) var(--space-6);
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+
+    .verdict-safe     .verdict-header { background: var(--cyan-dim); }
+    .verdict-malicious .verdict-header { background: var(--red-dim); }
+    .verdict-warning  .verdict-header { background: var(--amber-dim); }
+
+    .verdict-icon-wrap {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .verdict-safe     .verdict-icon-wrap { background: rgba(6, 182, 212, 0.2);  color: var(--cyan);  }
+    .verdict-malicious .verdict-icon-wrap { background: rgba(239, 68, 68, 0.2);  color: var(--red);   }
+    .verdict-warning  .verdict-icon-wrap { background: rgba(245, 158, 11, 0.2); color: var(--amber); }
+
+    .verdict-headline {
+      flex: 1;
+    }
+
+    .verdict-label-text {
+      font-family: var(--font-mono);
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      line-height: 1.2;
+    }
+
+    .verdict-safe     .verdict-label-text { color: var(--cyan);  }
+    .verdict-malicious .verdict-label-text { color: var(--red);   }
+    .verdict-warning  .verdict-label-text { color: var(--amber); }
+
+    .verdict-sublabel {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      margin-top: 2px;
+      text-transform: uppercase;
+    }
+
+    .verdict-body {
+      background: var(--surface-deep);
+      padding: var(--space-5) var(--space-6);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-5);
+    }
+
+    /* Confidence bar */
+    .conf-section {}
+
+    .conf-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: var(--space-2);
+    }
+
+    .conf-label {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .conf-value {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
       font-weight: 700;
     }
 
-    .verdict-reason .typewriter {
-      display: inline;
-      border-right: 2px solid var(--accent);
-      animation: blink .6s step-end infinite;
+    .verdict-safe     .conf-value { color: var(--cyan);  }
+    .verdict-malicious .conf-value { color: var(--red);   }
+    .verdict-warning  .conf-value { color: var(--amber); }
+
+    .conf-bar-track {
+      height: 8px;
+      background: var(--border);
+      border-radius: 100px;
+      overflow: hidden;
     }
 
-    .verdict-reason .typewriter.done {
-      border-right-color: transparent;
-      animation: none;
+    .conf-bar-fill {
+      height: 100%;
+      border-radius: 100px;
+      width: 0%;
+      transition: width 0.9s var(--ease);
     }
 
-    @keyframes blink {
-      50% { border-right-color: transparent; }
+    .verdict-safe     .conf-bar-fill { background: linear-gradient(90deg, #0891b2, var(--cyan)); }
+    .verdict-malicious .conf-bar-fill { background: linear-gradient(90deg, #b91c1c, var(--red));  }
+    .verdict-warning  .conf-bar-fill { background: linear-gradient(90deg, #b45309, var(--amber));}
+
+    /* Reason */
+    .reason-section {}
+
+    .reason-label {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: var(--space-2);
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
     }
 
-    .verdict-url {
-      font-size: .72rem;
-      color: var(--muted);
-      margin-top: .4rem;
-      word-break: break-all;
-      font-family: 'IBM Plex Mono', monospace;
+    .reason-text {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: var(--text);
+      line-height: 1.65;
+      padding: var(--space-3) var(--space-4);
+      background: var(--surface);
+      border-radius: var(--radius);
+      border-left: 3px solid var(--cyan);
+      word-break: break-word;
     }
 
-    /* error */
-    #error {
-      display: none;
-      margin-top: 1rem;
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: .78rem;
-      color: var(--danger);
-      padding: .6rem 1rem;
-      border: 1px solid rgba(255, 59, 92, .3);
-      border-radius: 4px;
-      background: rgba(255, 59, 92, .05);
+    .verdict-malicious .reason-text { border-left-color: var(--red);  }
+    .verdict-warning  .reason-text  { border-left-color: var(--amber);}
+
+    /* Analysed URL row */
+    .url-section {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-2);
     }
 
-    footer {
-      margin-top: 2rem;
-      text-align: center;
-      font-size: .72rem;
+    .url-section svg {
+      flex-shrink: 0;
       color: var(--text-dim);
-      font-family: 'IBM Plex Mono', monospace;
-      letter-spacing: .05em;
+      margin-top: 2px;
+    }
+
+    .analysed-url {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      word-break: break-all;
+      line-height: 1.5;
+    }
+
+    /* ─── Collapsible Security Analysis ─────────────────── */
+    .analysis-section {
+      border-top: 1px solid var(--border);
+      padding-top: var(--space-4);
+    }
+
+    .analysis-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      width: 100%;
+      text-align: left;
+      padding: 0;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      transition: color 0.15s;
+      min-height: 44px;
+    }
+
+    .analysis-toggle:hover {
+      color: var(--text);
+    }
+
+    .analysis-toggle:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 3px;
+      border-radius: var(--radius-sm);
+    }
+
+    .toggle-chevron {
+      margin-left: auto;
+      transition: transform 0.25s var(--ease);
+    }
+
+    .analysis-toggle[aria-expanded="true"] .toggle-chevron {
+      transform: rotate(180deg);
+    }
+
+    .analysis-body {
+      display: none;
+      margin-top: var(--space-4);
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .analysis-body.open {
+      display: flex;
+    }
+
+    .threat-flag {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-3);
+      padding: var(--space-3) var(--space-4);
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border-soft);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text);
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .threat-flag .flag-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--amber);
+      flex-shrink: 0;
+      margin-top: 6px;
+    }
+
+    .verdict-malicious .threat-flag .flag-dot { background: var(--red);  }
+    .verdict-safe     .threat-flag .flag-dot  { background: var(--cyan); }
+
+    .no-flags {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      padding: var(--space-3) 0;
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       FOOTER
+    ═══════════════════════════════════════════════════════ */
+    footer {
+      margin-top: auto;
+      padding: var(--space-8) var(--space-6) var(--space-6);
+      width: 100%;
+      max-width: 780px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--space-4);
+      border-top: 1px solid var(--border-soft);
+    }
+
+    .footer-left {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
+    }
+
+    .footer-brand {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+    }
+
+    .footer-meta {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+    }
+
+    .footer-right {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+
+    /* Version badge */
+    .version-badge {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 2px var(--space-3);
+      text-transform: uppercase;
+    }
+
+    /* API health indicator */
+    .api-status {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    .status-dot.online  { background: var(--cyan); box-shadow: 0 0 6px var(--cyan-glow); animation: pulse-dot 2s ease-in-out infinite; }
+    .status-dot.offline { background: var(--red); }
+    .status-dot.checking { background: var(--amber); animation: pulse-dot 1s ease-in-out infinite; }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       RESPONSIVE
+    ═══════════════════════════════════════════════════════ */
+    @media (max-width: 768px) {
+      .page { padding: var(--space-8) var(--space-4); gap: var(--space-6); }
+      .scan-card { padding: var(--space-6) var(--space-5); }
+      .verdict-header { padding: var(--space-4) var(--space-5); }
+      .verdict-body { padding: var(--space-4) var(--space-5); }
+      footer { flex-direction: column; align-items: flex-start; }
+    }
+
+    @media (max-width: 480px) {
+      .input-row {
+        flex-direction: column;
+      }
+      #scan-btn {
+        width: 100%;
+        justify-content: center;
+      }
+      #url-input { min-width: 0; }
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       SCREEN-READER ONLY UTILITY
+    ═══════════════════════════════════════════════════════ */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      white-space: nowrap;
+      border: 0;
     }
   </style>
 </head>
 
 <body>
-  <div class="wrap">
-    <header>
-      <p class="logo">Security / ML</p>
-      <h1>Phish<span>Guard</span></h1>
-      <p class="subtitle">Paste any URL to scan it against our trained detection model.</p>
+  <!-- ══════════════════════════ MAIN PAGE ══════════════════════════ -->
+  <main class="page" role="main">
+
+    <!-- Hero / Header -->
+    <header class="hero" role="banner">
+      <div class="logo-badge" aria-hidden="true">
+        <!-- Lucide: shield -->
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+             aria-hidden="true">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        Security Intelligence
+      </div>
+
+      <h1>Phish<span class="accent">Guard</span></h1>
+      <p class="hero-tagline">
+        Paste any URL below to run it through our trained phishing-detection model in real time.
+      </p>
     </header>
 
-    <div class="card">
-      <label class="field-label" for="url-input">Target URL</label>
-      <div class="input-row">
-        <input id="url-input" type="text" placeholder="https://example.com/path?q=1" autocomplete="off"
-          spellcheck="false" />
-        <button id="scan-btn" onclick="scan()">Scan</button>
+    <!-- Scan Card -->
+    <section class="scan-card" aria-label="URL scan form">
+      <div class="field-group">
+        <label class="field-label" for="url-input">
+          <!-- Lucide: link-2 -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+               aria-hidden="true">
+            <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"/>
+            <line x1="8" y1="12" x2="16" y2="12"/>
+          </svg>
+          Target URL
+        </label>
+
+        <div class="input-row">
+          <input
+            id="url-input"
+            type="text"
+            placeholder="https://example.com/path?q=1"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Enter URL to scan for phishing"
+            aria-describedby="url-hint"
+          />
+          <button
+            id="scan-btn"
+            type="button"
+            aria-label="Analyze the entered URL"
+            aria-busy="false"
+          >
+            <span class="spinner" role="status" aria-hidden="true"></span>
+            <!-- Lucide: search -->
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <span class="btn-label">Analyze</span>
+          </button>
+        </div>
+        <p id="url-hint" class="sr-only">Enter a full URL including https:// to check whether it is a phishing attempt.</p>
       </div>
 
-      <div id="error"></div>
-
-      <div id="result">
-        <div class="result-inner" id="result-inner">
-          <div class="verdict-icon" id="verdict-icon"></div>
-          <div>
-            <div class="verdict-label" id="verdict-label"></div>
-            <div class="verdict-conf" id="verdict-conf"></div>
-            <div class="verdict-reason" id="verdict-reason"></div>
-            <div class="verdict-url" id="verdict-url"></div>
-          </div>
+      <!-- Error Panel -->
+      <div
+        id="error-panel"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
+        <div class="error-icon" aria-hidden="true">
+          <!-- Lucide: alert-circle -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <div class="error-body">
+          <div class="error-title" id="error-title">Request Failed</div>
+          <div class="error-detail" id="error-detail"></div>
         </div>
       </div>
+
+      <!-- Skeleton loading state -->
+      <div id="skeleton" aria-live="polite" aria-label="Loading analysis results" role="status">
+        <div class="skel-row">
+          <div class="skel-circle"></div>
+          <div class="skel-lines">
+            <div class="skel-line short"></div>
+            <div class="skel-line medium"></div>
+          </div>
+        </div>
+        <div class="skel-bar"></div>
+        <div class="skel-line long"></div>
+        <div class="skel-line full"></div>
+        <div class="skel-line medium"></div>
+      </div>
+
+      <!-- Result Panel -->
+      <div
+        id="result-panel"
+        role="region"
+        aria-live="polite"
+        aria-label="Scan results"
+        aria-atomic="true"
+      >
+        <!-- Verdict Header -->
+        <div class="verdict-header">
+          <div class="verdict-icon-wrap" aria-hidden="true" id="verdict-icon-wrap">
+            <!-- Icon injected by JS -->
+          </div>
+          <div class="verdict-headline">
+            <div class="verdict-label-text" id="verdict-label"></div>
+            <div class="verdict-sublabel" id="verdict-sublabel"></div>
+          </div>
+        </div>
+
+        <!-- Verdict Body -->
+        <div class="verdict-body">
+
+          <!-- Confidence bar -->
+          <div class="conf-section">
+            <div class="conf-header">
+              <span class="conf-label">Confidence</span>
+              <span class="conf-value" id="conf-value"></span>
+            </div>
+            <div class="conf-bar-track" role="progressbar" id="conf-bar-track"
+                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+                 aria-label="Confidence level">
+              <div class="conf-bar-fill" id="conf-bar-fill"></div>
+            </div>
+          </div>
+
+          <!-- Detection reason -->
+          <div class="reason-section">
+            <div class="reason-label" aria-hidden="true">
+              <!-- Lucide: file-text -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+                   fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+              </svg>
+              Detection Reason
+            </div>
+            <div class="reason-text" id="reason-text" aria-label="Detection reason"></div>
+          </div>
+
+          <!-- Analysed URL -->
+          <div class="url-section">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+            <div class="analysed-url" id="analysed-url" aria-label="Analysed URL"></div>
+          </div>
+
+          <!-- Collapsible Security Analysis -->
+          <div class="analysis-section" id="analysis-section">
+            <button
+              class="analysis-toggle"
+              id="analysis-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="analysis-body"
+            >
+              <!-- Lucide: shield-alert -->
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                   fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                   aria-hidden="true">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <span>Security Analysis</span>
+              <span id="flag-count-badge" class="version-badge" style="margin-left:4px;"></span>
+              <!-- Lucide: chevron-down -->
+              <svg class="toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                   fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                   aria-hidden="true">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+
+            <div class="analysis-body" id="analysis-body" role="list">
+              <!-- Threat flags injected by JS -->
+            </div>
+          </div>
+
+        </div><!-- /.verdict-body -->
+      </div><!-- /#result-panel -->
+    </section>
+
+  </main><!-- /.page -->
+
+  <!-- Footer -->
+  <footer role="contentinfo">
+    <div class="footer-left">
+      <span class="footer-brand">PhishGuard MVP</span>
+      <span class="footer-meta">Random Forest · 91% accuracy · ROC-AUC 0.96</span>
     </div>
+    <div class="footer-right">
+      <span class="version-badge">v1.0</span>
+      <div class="api-status" aria-live="polite" aria-label="API status">
+        <span class="status-dot checking" id="status-dot" aria-hidden="true"></span>
+        <span id="status-label">Checking API…</span>
+      </div>
+    </div>
+  </footer>
 
-    <footer>PhishGuard MVP &mdash; Random Forest · 91% accuracy · ROC-AUC 0.96</footer>
-  </div>
-
-  <!-- Anime.js v3 — lightweight (17 KB), vanilla JS, spring physics -->
+  <!-- Anime.js v3 — spring physics animations -->
   <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.2/lib/anime.min.js"></script>
 
   <script>
-    const API = "https://ab2403-phishing-detection-mvp.hf.space/predict";
+    "use strict";
 
+    /* ── Constants ────────────────────────────────────────── */
+    const API_PREDICT = "https://ab2403-phishing-detection-mvp.hf.space/predict";
+    const API_HEALTH  = "https://ab2403-phishing-detection-mvp.hf.space/health";
+
+    /* ── Lucide SVG snippets (inline for result icons) ───── */
+    const ICON_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>`;
+
+    const ICON_X = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>`;
+
+    const ICON_ALERT = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/>
+      <line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>`;
+
+    /* ── DOM refs ─────────────────────────────────────────── */
     const $ = id => document.getElementById(id);
-    let scanAnim = null;   // track running button animation
-    let typeTimer = null;  // track typewriter interval
+    const urlInput      = $("url-input");
+    const scanBtn       = $("scan-btn");
+    const errorPanel    = $("error-panel");
+    const errorTitle    = $("error-title");
+    const errorDetail   = $("error-detail");
+    const skeleton      = $("skeleton");
+    const resultPanel   = $("result-panel");
+    const verdictLabel  = $("verdict-label");
+    const verdictSub    = $("verdict-sublabel");
+    const verdictIcon   = $("verdict-icon-wrap");
+    const confValue     = $("conf-value");
+    const confBarFill   = $("conf-bar-fill");
+    const confBarTrack  = $("conf-bar-track");
+    const reasonText    = $("reason-text");
+    const analysedUrl   = $("analysed-url");
+    const analysisToggle = $("analysis-toggle");
+    const analysisBody  = $("analysis-body");
+    const flagCountBadge = $("flag-count-badge");
+    const statusDot     = $("status-dot");
+    const statusLabel   = $("status-label");
 
-    $("url-input").addEventListener("keydown", e => {
+    let typeTimer = null;
+
+    /* ── Keyboard: Enter to scan ─────────────────────────── */
+    urlInput.addEventListener("keydown", e => {
       if (e.key === "Enter") scan();
     });
+    scanBtn.addEventListener("click", scan);
 
-    /* ── Typewriter effect ─────────────────────────────────── */
-    function typewrite(el, text, speed = 22) {
+    /* ── Collapsible Security Analysis ───────────────────── */
+    analysisToggle.addEventListener("click", () => {
+      const expanded = analysisToggle.getAttribute("aria-expanded") === "true";
+      analysisToggle.setAttribute("aria-expanded", String(!expanded));
+      analysisBody.classList.toggle("open", !expanded);
+    });
+
+    /* ── Typewriter effect ────────────────────────────────── */
+    function typewrite(el, text, speed = 18) {
       clearInterval(typeTimer);
-      el.innerHTML = '<span class="typewriter"></span>';
-      const cursor = el.querySelector(".typewriter");
+      el.textContent = "";
       let i = 0;
       typeTimer = setInterval(() => {
         if (i < text.length) {
-          cursor.textContent += text[i++];
+          el.textContent += text[i++];
         } else {
           clearInterval(typeTimer);
-          cursor.classList.add("done");
         }
       }, speed);
     }
 
-    /* ── Spring-in animation for result card ───────────────── */
-    function springIn(el) {
-      // Reset to start state
-      el.style.opacity = 0;
-      el.style.transform = "translateY(30px) scale(.96)";
-
-      anime({
-        targets: el,
-        translateY: [30, 0],
-        scale: [0.96, 1],
-        opacity: [0, 1],
-        duration: 800,
-        easing: "spring(1, 80, 12, 0)",   // mass, stiffness, damping, velocity
-      });
+    /* ── Show / hide UI states ───────────────────────────── */
+    function showError(title, detail) {
+      errorTitle.textContent  = title;
+      errorDetail.textContent = detail;
+      errorPanel.classList.add("visible");
     }
 
-    /* ── Main scan function ────────────────────────────────── */
+    function hideError() {
+      errorPanel.classList.remove("visible");
+    }
+
+    function showSkeleton() {
+      skeleton.classList.add("visible");
+    }
+
+    function hideSkeleton() {
+      skeleton.classList.remove("visible");
+    }
+
+    function setScanning(on) {
+      scanBtn.disabled = on;
+      scanBtn.setAttribute("aria-busy", String(on));
+      scanBtn.classList.toggle("scanning", on);
+      const btnLabel = scanBtn.querySelector(".btn-label");
+      btnLabel.textContent = on ? "Scanning…" : "Analyze";
+    }
+
+    /* ── Build result card ───────────────────────────────── */
+    function renderResult(data) {
+      const conf    = parseFloat(data.confidence) || 0;
+      const isSafe  = data.label === 0;
+      const isWarn  = isSafe ? false : conf < 75;  // malicious but low confidence → amber warning
+
+      // Determine theme class
+      const theme = isSafe ? "verdict-safe" : (isWarn ? "verdict-warning" : "verdict-malicious");
+
+      resultPanel.className = "";            // reset
+      resultPanel.classList.add(theme);
+
+      // Icon
+      verdictIcon.innerHTML = isSafe ? ICON_CHECK : (isWarn ? ICON_ALERT : ICON_X);
+
+      // Labels
+      verdictLabel.textContent = data.verdict || (isSafe ? "Benign" : "Malicious");
+      verdictSub.textContent   = isSafe
+        ? "✓ No phishing indicators detected"
+        : (isWarn ? "⚠ Low-confidence malicious signal" : "✗ Phishing URL detected");
+
+      // Confidence
+      confValue.textContent = `${conf}%`;
+      confBarFill.style.width = "0%";
+      confBarTrack.setAttribute("aria-valuenow", conf);
+
+      // Analysed URL
+      analysedUrl.textContent = data.url || urlInput.value.trim();
+
+      // Security Analysis flags
+      const flags = data.security_analysis
+        ? (Array.isArray(data.security_analysis)
+            ? data.security_analysis
+            : Object.entries(data.security_analysis).map(([k, v]) => `${k}: ${v}`))
+        : [];
+
+      analysisBody.innerHTML = "";
+      if (flags.length > 0) {
+        flagCountBadge.textContent = `${flags.length} flag${flags.length > 1 ? "s" : ""}`;
+        flags.forEach(flag => {
+          const item = document.createElement("div");
+          item.className = "threat-flag";
+          item.setAttribute("role", "listitem");
+          item.innerHTML = `<span class="flag-dot" aria-hidden="true"></span><span>${escapeHtml(String(flag))}</span>`;
+          analysisBody.appendChild(item);
+        });
+      } else {
+        flagCountBadge.textContent = "0 flags";
+        analysisBody.innerHTML = `<p class="no-flags">No threat flags returned by the model.</p>`;
+      }
+
+      // Collapse analysis by default
+      analysisToggle.setAttribute("aria-expanded", "false");
+      analysisBody.classList.remove("open");
+
+      // Show panel (before animation)
+      resultPanel.classList.add("visible");
+      resultPanel.style.opacity = "0";
+      resultPanel.style.transform = "translateY(24px) scale(0.97)";
+
+      // Animate in with Anime.js spring
+      anime({
+        targets: resultPanel,
+        translateY: [24, 0],
+        scale: [0.97, 1],
+        opacity: [0, 1],
+        duration: 700,
+        easing: "spring(1, 80, 10, 0)",
+      });
+
+      // Animate confidence bar after card lands
+      setTimeout(() => {
+        confBarFill.style.width = `${conf}%`;
+        // Typewrite the reason
+        typewrite(reasonText, data.reason || "No reason provided.");
+      }, 350);
+    }
+
+    /* ── Escape HTML helper ──────────────────────────────── */
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    /* ── Human-readable error messages ──────────────────── */
+    function friendlyError(status) {
+      switch (status) {
+        case 429: return {
+          title: "Rate Limit Reached",
+          detail: "Too many requests. Please wait 60 seconds and try again."
+        };
+        case 422: return {
+          title: "Invalid URL",
+          detail: "The URL you entered could not be parsed. Please enter a full URL including https:// or http://."
+        };
+        case 500: return {
+          title: "Server Error",
+          detail: "The analysis server encountered an internal error. Please try again in a moment."
+        };
+        case 503: return {
+          title: "Service Unavailable",
+          detail: "The PhishGuard API is temporarily unavailable (possibly starting up). Try again in 30 seconds."
+        };
+        default: return {
+          title: `Request Failed (${status})`,
+          detail: "An unexpected error occurred. Check your internet connection and try again."
+        };
+      }
+    }
+
+    /* ── Main scan function ──────────────────────────────── */
     async function scan() {
-      const url = $("url-input").value.trim();
-      if (!url) return;
+      const url = urlInput.value.trim();
+      if (!url) {
+        urlInput.focus();
+        return;
+      }
 
       // Reset previous state
-      $("error").style.display = "none";
-      $("result").style.display = "none";
+      hideError();
+      resultPanel.classList.remove("visible", "animate-in");
+      resultPanel.style.display = "";
       clearInterval(typeTimer);
 
-      // Button → scanning state with pulse
-      const btn = $("scan-btn");
-      btn.disabled = true;
-      btn.textContent = "Scanning…";
-      btn.classList.add("scanning");
+      // Start loading
+      setScanning(true);
+      // Show skeleton within ~0ms (well under 100ms target)
+      showSkeleton();
 
       try {
-        const res = await fetch(API, {
+        const res = await fetch(API_PREDICT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url }),
         });
 
-        if (!res.ok) throw new Error(`Server error ${res.status}`);
+        hideSkeleton();
+
+        if (!res.ok) {
+          const err = friendlyError(res.status);
+          showError(err.title, err.detail);
+          return;
+        }
 
         const data = await res.json();
-        const safe = data.label === 0;
-
-        // Populate content (before making visible)
-        const inner = $("result-inner");
-        inner.className = "result-inner " + (safe ? "safe" : "danger");
-        $("verdict-icon").textContent = safe ? "✓" : "⚠";
-        $("verdict-label").textContent = data.verdict;
-        $("verdict-conf").textContent = `Confidence: ${data.confidence}%`;
-        $("verdict-url").textContent = data.url;
-
-        // Show container, then spring-in the card
-        $("result").style.display = "block";
-        springIn(inner);
-
-        // Typewriter the detection reason (starts after card lands)
-        const reason = data.reason || "";
-        $("verdict-reason").innerHTML = "";
-        setTimeout(() => typewrite($("verdict-reason"), reason), 500);
+        renderResult(data);
 
       } catch (err) {
-        $("error").textContent = "Error: " + err.message;
-        $("error").style.display = "block";
+        hideSkeleton();
+        if (err instanceof TypeError && err.message.includes("fetch")) {
+          showError("Network Error", "Could not reach the PhishGuard API. Check your internet connection and try again.");
+        } else {
+          showError("Unexpected Error", err.message || "Something went wrong. Please try again.");
+        }
       } finally {
-        btn.disabled = false;
-        btn.textContent = "Scan";
-        btn.classList.remove("scanning");
+        setScanning(false);
       }
     }
+
+    /* ── API Health Check (on page load) ─────────────────── */
+    async function checkHealth() {
+      statusDot.className = "status-dot checking";
+      statusLabel.textContent = "Checking API…";
+      try {
+        const res = await fetch(API_HEALTH, { signal: AbortSignal.timeout(8000) });
+        if (res.ok) {
+          statusDot.className = "status-dot online";
+          statusLabel.textContent = "API Online";
+        } else {
+          statusDot.className = "status-dot offline";
+          statusLabel.textContent = "API Degraded";
+        }
+      } catch {
+        statusDot.className = "status-dot offline";
+        statusLabel.textContent = "API Offline";
+      }
+    }
+
+    // Kick off health check on load
+    checkHealth();
   </script>
 </body>
 
