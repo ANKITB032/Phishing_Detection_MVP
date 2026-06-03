@@ -169,7 +169,7 @@ class SecurityAnalysis(BaseModel):
 # -- Endpoints ----------------------------------------------------------------
 
 @app.post("/predict", response_model=PredictionResponse)
-@limiter.limit("5/minute")
+#@limiter.limit("5/minute")
 def predict(request: Request, req: URLRequest):
     """
     Analyse a URL for phishing indicators.
