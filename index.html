@@ -5,7 +5,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PhishGuard — AI-Powered Phishing URL Detection</title>
-  <meta name="description" content="PhishGuard uses a trained Random Forest model to detect phishing URLs in real time with 91% accuracy and ROC-AUC 0.96." />
+  <meta name="description"
+    content="PhishGuard uses a trained Random Forest model to detect phishing URLs in real time with 91% accuracy and ROC-AUC 0.96." />
 
   <!-- IBM Plex fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -20,47 +21,47 @@
     ═══════════════════════════════════════════════════════ */
     :root {
       /* Backgrounds */
-      --bg:           #0F172A;
-      --surface:      #1E293B;
+      --bg: #0F172A;
+      --surface: #1E293B;
       --surface-deep: #162032;
-      --border:       #334155;
-      --border-soft:  #1E293B;
+      --border: #334155;
+      --border-soft: #1E293B;
 
       /* Accent / status */
-      --cyan:         #06B6D4;
-      --cyan-dim:     rgba(6, 182, 212, 0.15);
-      --cyan-glow:    rgba(6, 182, 212, 0.35);
-      --red:          #EF4444;
-      --red-dim:      rgba(239, 68, 68, 0.12);
-      --red-glow:     rgba(239, 68, 68, 0.35);
-      --amber:        #F59E0B;
-      --amber-dim:    rgba(245, 158, 11, 0.12);
-      --amber-glow:   rgba(245, 158, 11, 0.35);
+      --cyan: #06B6D4;
+      --cyan-dim: rgba(6, 182, 212, 0.15);
+      --cyan-glow: rgba(6, 182, 212, 0.35);
+      --red: #EF4444;
+      --red-dim: rgba(239, 68, 68, 0.12);
+      --red-glow: rgba(239, 68, 68, 0.35);
+      --amber: #F59E0B;
+      --amber-dim: rgba(245, 158, 11, 0.12);
+      --amber-glow: rgba(245, 158, 11, 0.35);
 
       /* Text */
-      --text:         #F8FAFC;
-      --text-muted:   #94A3B8;
-      --text-dim:     #64748B;
+      --text: #F8FAFC;
+      --text-muted: #94A3B8;
+      --text-dim: #64748B;
 
       /* Typography */
-      --font-sans:    'IBM Plex Sans', sans-serif;
-      --font-mono:    'IBM Plex Mono', monospace;
+      --font-sans: 'IBM Plex Sans', sans-serif;
+      --font-mono: 'IBM Plex Mono', monospace;
 
       /* Spacing (8px grid) */
-      --space-1:  4px;
-      --space-2:  8px;
-      --space-3:  12px;
-      --space-4:  16px;
-      --space-5:  20px;
-      --space-6:  24px;
-      --space-8:  32px;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --space-6: 24px;
+      --space-8: 32px;
       --space-10: 40px;
       --space-12: 48px;
       --space-16: 64px;
 
       /* Borders */
       --radius-sm: 4px;
-      --radius:    6px;
+      --radius: 6px;
       --radius-lg: 10px;
 
       /* Transitions */
@@ -70,7 +71,9 @@
     /* ═══════════════════════════════════════════════════════
        RESET & BASE
     ═══════════════════════════════════════════════════════ */
-    *, *::before, *::after {
+    *,
+    *::before,
+    *::after {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
@@ -320,8 +323,15 @@
     }
 
     @keyframes btnPulse {
-      0%, 100% { box-shadow: 0 0 10px var(--cyan-glow); }
-      50%       { box-shadow: 0 0 28px rgba(6, 182, 212, 0.6); }
+
+      0%,
+      100% {
+        box-shadow: 0 0 10px var(--cyan-glow);
+      }
+
+      50% {
+        box-shadow: 0 0 28px rgba(6, 182, 212, 0.6);
+      }
     }
 
     /* Spinner inside button */
@@ -337,11 +347,18 @@
     }
 
     @keyframes spin {
-      to { transform: rotate(360deg); }
+      to {
+        transform: rotate(360deg);
+      }
     }
 
-    #scan-btn.scanning .spinner { display: block; }
-    #scan-btn.scanning .btn-icon { display: none; }
+    #scan-btn.scanning .spinner {
+      display: block;
+    }
+
+    #scan-btn.scanning .btn-icon {
+      display: none;
+    }
 
     /* ═══════════════════════════════════════════════════════
        ERROR STATE
@@ -435,10 +452,21 @@
       overflow: hidden;
     }
 
-    .skel-line.short  { width: 40%; }
-    .skel-line.medium { width: 65%; }
-    .skel-line.long   { width: 85%; }
-    .skel-line.full   { width: 100%; }
+    .skel-line.short {
+      width: 40%;
+    }
+
+    .skel-line.medium {
+      width: 65%;
+    }
+
+    .skel-line.long {
+      width: 85%;
+    }
+
+    .skel-line.full {
+      width: 100%;
+    }
 
     /* Shimmer animation */
     .skel-circle::after,
@@ -446,18 +474,21 @@
       content: '';
       position: absolute;
       inset: 0;
-      background: linear-gradient(
-        90deg,
-        transparent 0%,
-        rgba(148, 163, 184, 0.08) 50%,
-        transparent 100%
-      );
+      background: linear-gradient(90deg,
+          transparent 0%,
+          rgba(148, 163, 184, 0.08) 50%,
+          transparent 100%);
       animation: shimmer 1.6s ease-in-out infinite;
     }
 
     @keyframes shimmer {
-      0%   { transform: translateX(-100%); }
-      100% { transform: translateX(100%); }
+      0% {
+        transform: translateX(-100%);
+      }
+
+      100% {
+        transform: translateX(100%);
+      }
     }
 
     .skel-bar {
@@ -473,12 +504,10 @@
       content: '';
       position: absolute;
       inset: 0;
-      background: linear-gradient(
-        90deg,
-        transparent 0%,
-        rgba(148, 163, 184, 0.08) 50%,
-        transparent 100%
-      );
+      background: linear-gradient(90deg,
+          transparent 0%,
+          rgba(148, 163, 184, 0.08) 50%,
+          transparent 100%);
       animation: shimmer 1.6s ease-in-out infinite;
     }
 
@@ -529,9 +558,17 @@
       gap: var(--space-4);
     }
 
-    .verdict-safe     .verdict-header { background: var(--cyan-dim); }
-    .verdict-malicious .verdict-header { background: var(--red-dim); }
-    .verdict-warning  .verdict-header { background: var(--amber-dim); }
+    .verdict-safe .verdict-header {
+      background: var(--cyan-dim);
+    }
+
+    .verdict-malicious .verdict-header {
+      background: var(--red-dim);
+    }
+
+    .verdict-warning .verdict-header {
+      background: var(--amber-dim);
+    }
 
     .verdict-icon-wrap {
       width: 48px;
@@ -543,9 +580,20 @@
       flex-shrink: 0;
     }
 
-    .verdict-safe     .verdict-icon-wrap { background: rgba(6, 182, 212, 0.2);  color: var(--cyan);  }
-    .verdict-malicious .verdict-icon-wrap { background: rgba(239, 68, 68, 0.2);  color: var(--red);   }
-    .verdict-warning  .verdict-icon-wrap { background: rgba(245, 158, 11, 0.2); color: var(--amber); }
+    .verdict-safe .verdict-icon-wrap {
+      background: rgba(6, 182, 212, 0.2);
+      color: var(--cyan);
+    }
+
+    .verdict-malicious .verdict-icon-wrap {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--red);
+    }
+
+    .verdict-warning .verdict-icon-wrap {
+      background: rgba(245, 158, 11, 0.2);
+      color: var(--amber);
+    }
 
     .verdict-headline {
       flex: 1;
@@ -559,9 +607,17 @@
       line-height: 1.2;
     }
 
-    .verdict-safe     .verdict-label-text { color: var(--cyan);  }
-    .verdict-malicious .verdict-label-text { color: var(--red);   }
-    .verdict-warning  .verdict-label-text { color: var(--amber); }
+    .verdict-safe .verdict-label-text {
+      color: var(--cyan);
+    }
+
+    .verdict-malicious .verdict-label-text {
+      color: var(--red);
+    }
+
+    .verdict-warning .verdict-label-text {
+      color: var(--amber);
+    }
 
     .verdict-sublabel {
       font-family: var(--font-mono);
@@ -605,9 +661,17 @@
       font-weight: 700;
     }
 
-    .verdict-safe     .conf-value { color: var(--cyan);  }
-    .verdict-malicious .conf-value { color: var(--red);   }
-    .verdict-warning  .conf-value { color: var(--amber); }
+    .verdict-safe .conf-value {
+      color: var(--cyan);
+    }
+
+    .verdict-malicious .conf-value {
+      color: var(--red);
+    }
+
+    .verdict-warning .conf-value {
+      color: var(--amber);
+    }
 
     .conf-bar-track {
       height: 8px;
@@ -623,9 +687,17 @@
       transition: width 0.9s var(--ease);
     }
 
-    .verdict-safe     .conf-bar-fill { background: linear-gradient(90deg, #0891b2, var(--cyan)); }
-    .verdict-malicious .conf-bar-fill { background: linear-gradient(90deg, #b91c1c, var(--red));  }
-    .verdict-warning  .conf-bar-fill { background: linear-gradient(90deg, #b45309, var(--amber));}
+    .verdict-safe .conf-bar-fill {
+      background: linear-gradient(90deg, #0891b2, var(--cyan));
+    }
+
+    .verdict-malicious .conf-bar-fill {
+      background: linear-gradient(90deg, #b91c1c, var(--red));
+    }
+
+    .verdict-warning .conf-bar-fill {
+      background: linear-gradient(90deg, #b45309, var(--amber));
+    }
 
     /* Reason */
     .reason-section {}
@@ -655,8 +727,13 @@
       word-break: break-word;
     }
 
-    .verdict-malicious .reason-text { border-left-color: var(--red);  }
-    .verdict-warning  .reason-text  { border-left-color: var(--amber);}
+    .verdict-malicious .reason-text {
+      border-left-color: var(--red);
+    }
+
+    .verdict-warning .reason-text {
+      border-left-color: var(--amber);
+    }
 
     /* Analysed URL row */
     .url-section {
@@ -759,8 +836,13 @@
       margin-top: 6px;
     }
 
-    .verdict-malicious .threat-flag .flag-dot { background: var(--red);  }
-    .verdict-safe     .threat-flag .flag-dot  { background: var(--cyan); }
+    .verdict-malicious .threat-flag .flag-dot {
+      background: var(--red);
+    }
+
+    .verdict-safe .threat-flag .flag-dot {
+      background: var(--cyan);
+    }
 
     /* ── Nested flag content ─────────────────────────────── */
     .flag-content {
@@ -908,35 +990,73 @@
       flex-shrink: 0;
     }
 
-    .status-dot.online  { background: var(--cyan); box-shadow: 0 0 6px var(--cyan-glow); animation: pulse-dot 2s ease-in-out infinite; }
-    .status-dot.offline { background: var(--red); }
-    .status-dot.checking { background: var(--amber); animation: pulse-dot 1s ease-in-out infinite; }
+    .status-dot.online {
+      background: var(--cyan);
+      box-shadow: 0 0 6px var(--cyan-glow);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+
+    .status-dot.offline {
+      background: var(--red);
+    }
+
+    .status-dot.checking {
+      background: var(--amber);
+      animation: pulse-dot 1s ease-in-out infinite;
+    }
 
     @keyframes pulse-dot {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.4; }
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.4;
+      }
     }
 
     /* ═══════════════════════════════════════════════════════
        RESPONSIVE
     ═══════════════════════════════════════════════════════ */
     @media (max-width: 768px) {
-      .page { padding: var(--space-8) var(--space-4); gap: var(--space-6); }
-      .scan-card { padding: var(--space-6) var(--space-5); }
-      .verdict-header { padding: var(--space-4) var(--space-5); }
-      .verdict-body { padding: var(--space-4) var(--space-5); }
-      footer { flex-direction: column; align-items: flex-start; }
+      .page {
+        padding: var(--space-8) var(--space-4);
+        gap: var(--space-6);
+      }
+
+      .scan-card {
+        padding: var(--space-6) var(--space-5);
+      }
+
+      .verdict-header {
+        padding: var(--space-4) var(--space-5);
+      }
+
+      .verdict-body {
+        padding: var(--space-4) var(--space-5);
+      }
+
+      footer {
+        flex-direction: column;
+        align-items: flex-start;
+      }
     }
 
     @media (max-width: 480px) {
       .input-row {
         flex-direction: column;
       }
+
       #scan-btn {
         width: 100%;
         justify-content: center;
       }
-      #url-input { min-width: 0; }
+
+      #url-input {
+        min-width: 0;
+      }
     }
 
     /* ═══════════════════════════════════════════════════════
@@ -949,10 +1069,11 @@
       padding: 0;
       margin: -1px;
       overflow: hidden;
-      clip: rect(0,0,0,0);
+      clip: rect(0, 0, 0, 0);
       white-space: nowrap;
       border: 0;
     }
+
     /* ═══════════════════════════════════════════════════════
        REPORT FORM
     ═══════════════════════════════════════════════════════ */
@@ -988,7 +1109,8 @@
       align-self: flex-start;
     }
 
-    .report-trigger:hover, .report-trigger:focus-visible {
+    .report-trigger:hover,
+    .report-trigger:focus-visible {
       color: var(--amber);
       border-color: var(--amber);
       outline: none;
@@ -1031,7 +1153,8 @@
       transition: all 0.15s;
     }
 
-    .report-choice:hover, .report-choice:focus-visible {
+    .report-choice:hover,
+    .report-choice:focus-visible {
       border-color: var(--cyan);
       color: var(--text);
       outline: none;
@@ -1136,10 +1259,9 @@
     <header class="hero" role="banner">
       <div class="logo-badge" aria-hidden="true">
         <!-- Lucide: shield -->
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
-             fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-             aria-hidden="true">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
         </svg>
         Security Intelligence
       </div>
@@ -1155,59 +1277,42 @@
       <div class="field-group">
         <label class="field-label" for="url-input">
           <!-- Lucide: link-2 -->
-          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-               aria-hidden="true">
-            <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"/>
-            <line x1="8" y1="12" x2="16" y2="12"/>
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3" />
+            <line x1="8" y1="12" x2="16" y2="12" />
           </svg>
           Target URL
         </label>
 
         <div class="input-row">
-          <input
-            id="url-input"
-            type="text"
-            placeholder="https://example.com/path?q=1"
-            autocomplete="off"
-            spellcheck="false"
-            aria-label="Enter URL to scan for phishing"
-            aria-describedby="url-hint"
-          />
-          <button
-            id="scan-btn"
-            type="button"
-            aria-label="Analyze the entered URL"
-            aria-busy="false"
-          >
+          <input id="url-input" type="text" placeholder="https://example.com/path?q=1" autocomplete="off"
+            spellcheck="false" aria-label="Enter URL to scan for phishing" aria-describedby="url-hint" />
+          <button id="scan-btn" type="button" aria-label="Analyze the entered URL" aria-busy="false">
             <span class="spinner" role="status" aria-hidden="true"></span>
             <!-- Lucide: search -->
             <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                 fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-                 aria-hidden="true">
-              <circle cx="11" cy="11" r="8"/>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+              aria-hidden="true">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             <span class="btn-label">Analyze</span>
           </button>
         </div>
-        <p id="url-hint" class="sr-only">Enter a full URL including https:// to check whether it is a phishing attempt.</p>
+        <p id="url-hint" class="sr-only">Enter a full URL including https:// to check whether it is a phishing attempt.
+        </p>
       </div>
 
       <!-- Error Panel -->
-      <div
-        id="error-panel"
-        role="alert"
-        aria-live="assertive"
-        aria-atomic="true"
-      >
+      <div id="error-panel" role="alert" aria-live="assertive" aria-atomic="true">
         <div class="error-icon" aria-hidden="true">
           <!-- Lucide: alert-circle -->
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="12" y1="8" x2="12" y2="12"/>
-            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
         </div>
         <div class="error-body">
@@ -1232,13 +1337,7 @@
       </div>
 
       <!-- Result Panel -->
-      <div
-        id="result-panel"
-        role="region"
-        aria-live="polite"
-        aria-label="Scan results"
-        aria-atomic="true"
-      >
+      <div id="result-panel" role="region" aria-live="polite" aria-label="Scan results" aria-atomic="true">
         <!-- Verdict Header -->
         <div class="verdict-header">
           <div class="verdict-icon-wrap" aria-hidden="true" id="verdict-icon-wrap">
@@ -1259,9 +1358,8 @@
               <span class="conf-label">Confidence</span>
               <span class="conf-value" id="conf-value"></span>
             </div>
-            <div class="conf-bar-track" role="progressbar" id="conf-bar-track"
-                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
-                 aria-label="Confidence level">
+            <div class="conf-bar-track" role="progressbar" id="conf-bar-track" aria-valuemin="0" aria-valuemax="100"
+              aria-valuenow="0" aria-label="Confidence level">
               <div class="conf-bar-fill" id="conf-bar-fill"></div>
             </div>
           </div>
@@ -1270,13 +1368,13 @@
           <div class="reason-section">
             <div class="reason-label" aria-hidden="true">
               <!-- Lucide: file-text -->
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
-                   fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-                <line x1="16" y1="13" x2="8" y2="13"/>
-                <line x1="16" y1="17" x2="8" y2="17"/>
-                <polyline points="10 9 9 9 8 9"/>
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
               </svg>
               Detection Reason
             </div>
@@ -1285,39 +1383,33 @@
 
           <!-- Analysed URL -->
           <div class="url-section">
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
-                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                 aria-hidden="true">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
             </svg>
             <div class="analysed-url" id="analysed-url" aria-label="Analysed URL"></div>
           </div>
 
           <!-- Collapsible Security Analysis -->
           <div class="analysis-section" id="analysis-section">
-            <button
-              class="analysis-toggle"
-              id="analysis-toggle"
-              type="button"
-              aria-expanded="false"
-              aria-controls="analysis-body"
-            >
+            <button class="analysis-toggle" id="analysis-toggle" type="button" aria-expanded="false"
+              aria-controls="analysis-body">
               <!-- Lucide: shield-alert -->
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                   fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                   aria-hidden="true">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                <line x1="12" y1="8" x2="12" y2="12"/>
-                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                aria-hidden="true">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
               <span>Security Analysis</span>
               <span id="flag-count-badge" class="version-badge" style="margin-left:4px;"></span>
               <!-- Lucide: chevron-down -->
               <svg class="toggle-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                   fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                   aria-hidden="true">
-                <polyline points="6 9 12 15 18 9"/>
+                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                aria-hidden="true">
+                <polyline points="6 9 12 15 18 9" />
               </svg>
             </button>
 
@@ -1327,19 +1419,13 @@
           </div>
 
           <!-- Report Incorrect Verdict trigger -->
-          <button
-            class="report-trigger"
-            id="report-trigger"
-            type="button"
-            aria-expanded="false"
-            aria-controls="report-zone"
-          >
+          <button class="report-trigger" id="report-trigger" type="button" aria-expanded="false"
+            aria-controls="report-zone">
             <!-- Lucide: flag -->
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
-                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                 aria-hidden="true">
-              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-              <line x1="4" y1="22" x2="4" y2="15"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+              <line x1="4" y1="22" x2="4" y2="15" />
             </svg>
             Report Incorrect Verdict
           </button>
@@ -1348,47 +1434,32 @@
           <div class="report-zone" id="report-zone" role="form" aria-label="Report incorrect verdict">
             <p class="report-label">What should the correct verdict be?</p>
             <div class="report-choices" role="group" aria-label="Verdict correction choices">
-              <button
-                class="report-choice"
-                id="report-benign"
-                type="button"
-                aria-pressed="false"
-                aria-label="Mark as Actually Benign"
-              >
+              <button class="report-choice" id="report-benign" type="button" aria-pressed="false"
+                aria-label="Mark as Actually Benign">
                 <!-- Lucide: check-circle -->
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                     aria-hidden="true">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                  <polyline points="22 4 12 14.01 9 11.01"/>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  aria-hidden="true">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
                 </svg>
                 Actually Benign
               </button>
-              <button
-                class="report-choice"
-                id="report-malicious"
-                type="button"
-                aria-pressed="false"
-                aria-label="Mark as Actually Malicious"
-              >
+              <button class="report-choice" id="report-malicious" type="button" aria-pressed="false"
+                aria-label="Mark as Actually Malicious">
                 <!-- Lucide: shield-alert -->
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                     aria-hidden="true">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                  <line x1="12" y1="8" x2="12" y2="12"/>
-                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  aria-hidden="true">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
                 Actually Malicious
               </button>
             </div>
-            <button
-              class="report-submit"
-              id="report-submit"
-              type="button"
-              disabled
-              aria-label="Submit verdict correction"
-            >
+            <button class="report-submit" id="report-submit" type="button" disabled
+              aria-label="Submit verdict correction">
               <span class="spinner" role="status" aria-hidden="true"></span>
               <span class="btn-label">Submit Report</span>
             </button>
@@ -1423,8 +1494,8 @@
     "use strict";
 
     /* ── Constants ────────────────────────────────────────── */
-    const API_PREDICT = "https://ab2403-phishing-detection-mvp.hf.space/predict";
-    const API_HEALTH  = "https://ab2403-phishing-detection-mvp.hf.space/health";
+    const API_PREDICT = "https://ab2403-phishguard-api.hf.space/predict";
+    const API_HEALTH = "https://ab2403-phishguard-api.hf.space/health";
 
     /* ── Lucide SVG snippets (inline for result icons) ───── */
     const ICON_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
@@ -1446,26 +1517,26 @@
 
     /* ── DOM refs ─────────────────────────────────────────── */
     const $ = id => document.getElementById(id);
-    const urlInput      = $("url-input");
-    const scanBtn       = $("scan-btn");
-    const errorPanel    = $("error-panel");
-    const errorTitle    = $("error-title");
-    const errorDetail   = $("error-detail");
-    const skeleton      = $("skeleton");
-    const resultPanel   = $("result-panel");
-    const verdictLabel  = $("verdict-label");
-    const verdictSub    = $("verdict-sublabel");
-    const verdictIcon   = $("verdict-icon-wrap");
-    const confValue     = $("conf-value");
-    const confBarFill   = $("conf-bar-fill");
-    const confBarTrack  = $("conf-bar-track");
-    const reasonText    = $("reason-text");
-    const analysedUrl   = $("analysed-url");
+    const urlInput = $("url-input");
+    const scanBtn = $("scan-btn");
+    const errorPanel = $("error-panel");
+    const errorTitle = $("error-title");
+    const errorDetail = $("error-detail");
+    const skeleton = $("skeleton");
+    const resultPanel = $("result-panel");
+    const verdictLabel = $("verdict-label");
+    const verdictSub = $("verdict-sublabel");
+    const verdictIcon = $("verdict-icon-wrap");
+    const confValue = $("conf-value");
+    const confBarFill = $("conf-bar-fill");
+    const confBarTrack = $("conf-bar-track");
+    const reasonText = $("reason-text");
+    const analysedUrl = $("analysed-url");
     const analysisToggle = $("analysis-toggle");
-    const analysisBody  = $("analysis-body");
+    const analysisBody = $("analysis-body");
     const flagCountBadge = $("flag-count-badge");
-    const statusDot     = $("status-dot");
-    const statusLabel   = $("status-label");
+    const statusDot = $("status-dot");
+    const statusLabel = $("status-label");
 
     let typeTimer = null;
 
@@ -1498,7 +1569,7 @@
 
     /* ── Show / hide UI states ───────────────────────────── */
     function showError(title, detail) {
-      errorTitle.textContent  = title;
+      errorTitle.textContent = title;
       errorDetail.textContent = detail;
       errorPanel.classList.add("visible");
     }
@@ -1525,9 +1596,9 @@
 
     /* ── Build result card ───────────────────────────────── */
     function renderResult(data) {
-      const conf    = parseFloat(data.confidence) || 0;
-      const isSafe  = data.label === 0;
-      const isWarn  = isSafe ? false : conf < 75;  // malicious but low confidence → amber warning
+      const conf = parseFloat(data.confidence) || 0;
+      const isSafe = data.label === 0;
+      const isWarn = isSafe ? false : conf < 75;  // malicious but low confidence → amber warning
 
       // Determine theme class
       const theme = isSafe ? "verdict-safe" : (isWarn ? "verdict-warning" : "verdict-malicious");
@@ -1543,7 +1614,7 @@
 
       // Labels
       verdictLabel.textContent = data.verdict || (isSafe ? "Benign" : "Malicious");
-      verdictSub.textContent   = isSafe
+      verdictSub.textContent = isSafe
         ? "✓ No phishing indicators detected"
         : (isWarn ? "⚠ Low-confidence malicious signal" : "✗ Phishing URL detected");
 
@@ -1816,23 +1887,23 @@
     }
 
     /* ── Report endpoint ─────────────────────────────────── */
-    const API_REPORT = "https://ab2403-phishing-detection-mvp.hf.space/report";
+    const API_REPORT = "https://ab2403-phishguard-api.hf.space/report";
 
     /* ── Report DOM refs ─────────────────────────────────── */
-    const reportTrigger  = $("report-trigger");
-    const reportZone     = $("report-zone");
-    const reportBenign   = $("report-benign");
+    const reportTrigger = $("report-trigger");
+    const reportZone = $("report-zone");
+    const reportBenign = $("report-benign");
     const reportMalicious = $("report-malicious");
-    const reportSubmit   = $("report-submit");
+    const reportSubmit = $("report-submit");
     const reportFeedback = $("report-feedback");
 
     let selectedVerdict = null;  // "benign" | "malicious" | null
-    let reportedUrl     = "";    // URL of the current scan result
+    let reportedUrl = "";    // URL of the current scan result
 
     /* ── Reset report form to initial state ─────────────── */
     function resetReport() {
       selectedVerdict = null;
-      reportedUrl     = "";
+      reportedUrl = "";
       reportBenign.classList.remove("selected-benign");
       reportBenign.setAttribute("aria-pressed", "false");
       reportMalicious.classList.remove("selected-malicious");
@@ -1895,7 +1966,7 @@
         } else {
           const body = await res.json().catch(() => ({}));
           reportFeedback.className = "report-feedback error";
-          reportFeedback.textContent = `✗ Submission failed (${res.status}): ${body.detail || "Please try again."}` ;
+          reportFeedback.textContent = `✗ Submission failed (${res.status}): ${body.detail || "Please try again."}`;
           reportSubmit.disabled = false;
         }
       } catch (err) {
