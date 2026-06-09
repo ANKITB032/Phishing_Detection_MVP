@@ -74,102 +74,42 @@ class URLRequest(BaseModel):
     url: str
 
 
-class EncodedPayloads(BaseModel):
-    base64_found: bool
-    hex_found: bool
-    encoded_snippets: list[str]
-
-
-class EntropyAnalysis(BaseModel):
-    query_entropy: float
-    high_entropy: bool
-    param_details: dict
-
-
-class TyposquattingResult(BaseModel):
-    is_typosquat: bool
-    matched_brand: Optional[str]
-    edit_distance: Optional[int]
-
-
-class SuspiciousTLD(BaseModel):
-    flagged: bool
-    tld: str
-
-
-class URLComplexity(BaseModel):
-    is_complex: bool
-    dot_count: int
-    url_length: int
-    details: list[str]
-
-
-class PhishingKeywords(BaseModel):
-    found: bool
-    matched_keywords: list[str]
-
-
-class IPFSGateway(BaseModel):
-    is_ipfs: bool
-    gateway: Optional[str]
-    cid: Optional[str]
-    whitelisted: bool
-
-
-class ShortenerExpansion(BaseModel):
-    is_short: bool
-    original_url: str
-    expanded_url: Optional[str]
-    error: Optional[str]
-
-
+# Single flexible SecurityAnalysis — extra="allow" absorbs any shape the
+# predictor returns (full pipeline, trusted-domain string, or Rule 0 dict).
+# All heuristic fields are Optional[Any] so a short-circuit response that
+# omits them never triggers a ResponseValidationError.
 class SecurityAnalysis(BaseModel):
-    encoded_payloads: EncodedPayloads
-    entropy_analysis: EntropyAnalysis
-    vulnerability_patterns: dict
-    typosquatting: TyposquattingResult
-    suspicious_tld: SuspiciousTLD
-    url_complexity: URLComplexity
-    phishing_keywords: PhishingKeywords
-    threat_flags: list[str]
-    trust_override: bool
-    ipfs_gateway: IPFSGateway
-    shortener_expansion: ShortenerExpansion
+    model_config = {"extra": "allow"}
+
+    # Core fields — present on all code paths
+    threat_flags:           List[str]      = []
+    trust_override:         Optional[bool] = None
+
+    # Heuristic modules — absent on short-circuit responses
+    encoded_payloads:       Optional[Any]  = None
+    entropy_analysis:       Optional[Any]  = None
+    vulnerability_patterns: Optional[Any]  = None
+    typosquatting:          Optional[Any]  = None
+    suspicious_tld:         Optional[Any]  = None
+    url_complexity:         Optional[Any]  = None
+    phishing_keywords:      Optional[Any]  = None
+    ipfs_gateway:           Optional[Any]  = None
+    shortener_expansion:    Optional[Any]  = None
+    infrastructure_abuse:   Optional[Any]  = None
+    # Live content (Module L)
+    live_content:                Optional[Any]  = None
+    brand_title_impersonation:   Optional[Any]  = None
 
 
 class PredictionResponse(BaseModel):
-    url:                str
-    original_url:       Optional[str]  = None   # set when shortener was expanded
-    label:              int
-    verdict:            str
-    confidence:         float
-    reason:             str
-    security_analysis:  Union[SecurityAnalysis, str]
+    url:               str
+    original_url:      Optional[str]  = None   # set when shortener was expanded
+    label:             int
+    verdict:           str
+    confidence:        float
+    reason:            str
+    security_analysis: Any = None              # Any — accepts dict, str, or None
 
-class InfrastructureAbuse(BaseModel):
-    is_abuse: bool
-    provider: Optional[str]
-    subdomain: Optional[str]
-    reason: str
-
-class SecurityAnalysis(BaseModel):
-    model_config = {"extra": "allow"}   # absorbs any future fields silently
-
-    # Core fields — always present
-    threat_flags:            List[str]        = []
-    trust_override:          Optional[bool]   = None
-
-    # Heuristic modules — Optional so a crashed module never 500s
-    encoded_payloads:        Optional[Any]    = None
-    entropy_analysis:        Optional[Any]    = None
-    vulnerability_patterns:  Optional[Any]    = None
-    typosquatting:           Optional[Any]    = None
-    suspicious_tld:          Optional[Any]    = None
-    url_complexity:          Optional[Any]    = None
-    phishing_keywords:       Optional[Any]    = None
-    ipfs_gateway:            Optional[Any]    = None
-    shortener_expansion:     Optional[Any]    = None
-    infrastructure_abuse:    Optional[Any]    = None  # v3.5
 
 class ReportRequest(BaseModel):
     url:             str
