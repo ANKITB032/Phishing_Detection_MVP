@@ -953,6 +953,178 @@
       white-space: nowrap;
       border: 0;
     }
+    /* ═══════════════════════════════════════════════════════
+       REPORT FORM
+    ═══════════════════════════════════════════════════════ */
+    .report-zone {
+      margin-top: var(--space-5);
+      border-top: 1px solid var(--border-soft);
+      padding-top: var(--space-5);
+      display: none;
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+
+    .report-zone.open {
+      display: flex;
+    }
+
+    .report-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px var(--space-4);
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      align-self: flex-start;
+    }
+
+    .report-trigger:hover, .report-trigger:focus-visible {
+      color: var(--amber);
+      border-color: var(--amber);
+      outline: none;
+    }
+
+    .report-trigger:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+
+    .report-label {
+      font-family: var(--font-sans);
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+
+    .report-choices {
+      display: flex;
+      gap: var(--space-3);
+      flex-wrap: wrap;
+    }
+
+    .report-choice {
+      flex: 1;
+      min-width: 120px;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      border-radius: var(--radius);
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .report-choice:hover, .report-choice:focus-visible {
+      border-color: var(--cyan);
+      color: var(--text);
+      outline: none;
+    }
+
+    .report-choice:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+
+    .report-choice.selected-benign {
+      border-color: var(--cyan);
+      background: rgba(6, 182, 212, 0.08);
+      color: var(--cyan);
+    }
+
+    .report-choice.selected-malicious {
+      border-color: var(--red);
+      background: rgba(239, 68, 68, 0.08);
+      color: var(--red);
+    }
+
+    .report-submit {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--bg);
+      background: var(--cyan);
+      border: none;
+      border-radius: var(--radius);
+      padding: 0 var(--space-5);
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    .report-submit:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .report-submit:not(:disabled):hover {
+      opacity: 0.88;
+      transform: translateY(-1px);
+    }
+
+    .report-submit:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+
+    .report-submit .spinner {
+      display: none;
+    }
+
+    .report-submit.submitting .spinner {
+      display: block;
+    }
+
+    .report-submit.submitting .btn-label {
+      display: none;
+    }
+
+    .report-feedback {
+      display: none;
+      align-items: center;
+      gap: var(--space-2);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius);
+      border: 1px solid;
+    }
+
+    .report-feedback.success {
+      display: flex;
+      color: var(--cyan);
+      border-color: rgba(6, 182, 212, 0.3);
+      background: rgba(6, 182, 212, 0.06);
+    }
+
+    .report-feedback.error {
+      display: flex;
+      color: var(--red);
+      border-color: rgba(239, 68, 68, 0.3);
+      background: rgba(239, 68, 68, 0.06);
+    }
   </style>
 </head>
 
@@ -1154,6 +1326,75 @@
             </div>
           </div>
 
+          <!-- Report Incorrect Verdict trigger -->
+          <button
+            class="report-trigger"
+            id="report-trigger"
+            type="button"
+            aria-expanded="false"
+            aria-controls="report-zone"
+          >
+            <!-- Lucide: flag -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true">
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+              <line x1="4" y1="22" x2="4" y2="15"/>
+            </svg>
+            Report Incorrect Verdict
+          </button>
+
+          <!-- Report Incorrect Verdict zone -->
+          <div class="report-zone" id="report-zone" role="form" aria-label="Report incorrect verdict">
+            <p class="report-label">What should the correct verdict be?</p>
+            <div class="report-choices" role="group" aria-label="Verdict correction choices">
+              <button
+                class="report-choice"
+                id="report-benign"
+                type="button"
+                aria-pressed="false"
+                aria-label="Mark as Actually Benign"
+              >
+                <!-- Lucide: check-circle -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                     aria-hidden="true">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                Actually Benign
+              </button>
+              <button
+                class="report-choice"
+                id="report-malicious"
+                type="button"
+                aria-pressed="false"
+                aria-label="Mark as Actually Malicious"
+              >
+                <!-- Lucide: shield-alert -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                     aria-hidden="true">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                Actually Malicious
+              </button>
+            </div>
+            <button
+              class="report-submit"
+              id="report-submit"
+              type="button"
+              disabled
+              aria-label="Submit verdict correction"
+            >
+              <span class="spinner" role="status" aria-hidden="true"></span>
+              <span class="btn-label">Submit Report</span>
+            </button>
+            <div class="report-feedback" id="report-feedback" aria-live="polite"></div>
+          </div>
+
         </div><!-- /.verdict-body -->
       </div><!-- /#result-panel -->
     </section>
@@ -1293,6 +1534,9 @@
 
       resultPanel.className = "";            // reset
       resultPanel.classList.add(theme);
+
+      // Capture URL for the report form
+      reportedUrl = data.url || urlInput.value.trim();
 
       // Icon
       verdictIcon.innerHTML = isSafe ? ICON_CHECK : (isWarn ? ICON_ALERT : ICON_X);
@@ -1531,6 +1775,7 @@
 
       // Reset previous state
       hideError();
+      resetReport();
       resultPanel.classList.remove("visible", "animate-in");
       resultPanel.style.display = "";
       clearInterval(typeTimer);
@@ -1569,6 +1814,98 @@
         setScanning(false);
       }
     }
+
+    /* ── Report endpoint ─────────────────────────────────── */
+    const API_REPORT = "https://ab2403-phishing-detection-mvp.hf.space/report";
+
+    /* ── Report DOM refs ─────────────────────────────────── */
+    const reportTrigger  = $("report-trigger");
+    const reportZone     = $("report-zone");
+    const reportBenign   = $("report-benign");
+    const reportMalicious = $("report-malicious");
+    const reportSubmit   = $("report-submit");
+    const reportFeedback = $("report-feedback");
+
+    let selectedVerdict = null;  // "benign" | "malicious" | null
+    let reportedUrl     = "";    // URL of the current scan result
+
+    /* ── Reset report form to initial state ─────────────── */
+    function resetReport() {
+      selectedVerdict = null;
+      reportedUrl     = "";
+      reportBenign.classList.remove("selected-benign");
+      reportBenign.setAttribute("aria-pressed", "false");
+      reportMalicious.classList.remove("selected-malicious");
+      reportMalicious.setAttribute("aria-pressed", "false");
+      reportSubmit.disabled = true;
+      reportFeedback.className = "report-feedback";
+      reportFeedback.textContent = "";
+      reportZone.classList.remove("open");
+      reportTrigger.setAttribute("aria-expanded", "false");
+    }
+
+    /* ── Toggle report zone visibility ──────────────────── */
+    reportTrigger.addEventListener("click", () => {
+      const open = reportZone.classList.toggle("open");
+      reportTrigger.setAttribute("aria-expanded", String(open));
+    });
+
+    /* ── Verdict choice selection ────────────────────────── */
+    reportBenign.addEventListener("click", () => {
+      selectedVerdict = "benign";
+      reportBenign.classList.add("selected-benign");
+      reportBenign.setAttribute("aria-pressed", "true");
+      reportMalicious.classList.remove("selected-malicious");
+      reportMalicious.setAttribute("aria-pressed", "false");
+      reportSubmit.disabled = false;
+      reportFeedback.className = "report-feedback";  // clear previous feedback
+      reportFeedback.textContent = "";
+    });
+
+    reportMalicious.addEventListener("click", () => {
+      selectedVerdict = "malicious";
+      reportMalicious.classList.add("selected-malicious");
+      reportMalicious.setAttribute("aria-pressed", "true");
+      reportBenign.classList.remove("selected-benign");
+      reportBenign.setAttribute("aria-pressed", "false");
+      reportSubmit.disabled = false;
+      reportFeedback.className = "report-feedback";
+      reportFeedback.textContent = "";
+    });
+
+    /* ── Submit report ───────────────────────────────────── */
+    reportSubmit.addEventListener("click", async () => {
+      if (!selectedVerdict || !reportedUrl) return;
+
+      reportSubmit.disabled = true;
+      reportSubmit.classList.add("submitting");
+      reportFeedback.className = "report-feedback";
+      reportFeedback.textContent = "";
+
+      try {
+        const res = await fetch(API_REPORT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: reportedUrl, correct_verdict: selectedVerdict }),
+        });
+
+        if (res.ok) {
+          reportFeedback.className = "report-feedback success";
+          reportFeedback.textContent = "✓ Report received. Thank you for improving PhishGuard.";
+        } else {
+          const body = await res.json().catch(() => ({}));
+          reportFeedback.className = "report-feedback error";
+          reportFeedback.textContent = `✗ Submission failed (${res.status}): ${body.detail || "Please try again."}` ;
+          reportSubmit.disabled = false;
+        }
+      } catch (err) {
+        reportFeedback.className = "report-feedback error";
+        reportFeedback.textContent = "✗ Network error — could not reach the API. Try again.";
+        reportSubmit.disabled = false;
+      } finally {
+        reportSubmit.classList.remove("submitting");
+      }
+    });
 
     /* ── API Health Check (on page load) ─────────────────── */
     async function checkHealth() {

@@ -22,6 +22,17 @@ import pandas as pd
 import requests
 from urllib.parse import urlparse, parse_qs
 
+# ── Optional: beautifulsoup4 for live HTML title extraction ──────────────────
+try:
+    from bs4 import BeautifulSoup
+    _BS4_AVAILABLE = True
+except ImportError:
+    _BS4_AVAILABLE = False
+    logging.getLogger(__name__).warning(
+        "beautifulsoup4 not installed — live title checks disabled. "
+        "Run: pip install beautifulsoup4"
+    )
+
 logger = logging.getLogger(__name__)
 
 # ── Model Loading ────────────────────────────────────────────────────────────
@@ -93,6 +104,41 @@ FREE_HOSTING_PROVIDERS: set[str] = {
     "firebaseapp.com", "web.app", "vercel.app", "netlify.app",
     "github.io", "pages.dev", "workers.dev", "glitch.me",
     "repl.co", "ngrok.io", "onrender.com", "fly.dev",
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  LIVE CONTENT ANALYSIS  (Module L — Brand Impersonation in HTML Title)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Maps brand keyword (lowercase) → official registrable domain.
+# If a fetched page <title> contains the brand keyword but the URL's domain
+# does NOT match the official domain, it is a brand-impersonation-in-title hit.
+TARGET_BRANDS: dict[str, str] = {
+    "paypal":         "paypal.com",
+    "netflix":        "netflix.com",
+    "amazon":         "amazon.com",
+    "apple":          "apple.com",
+    "bank of america": "bankofamerica.com",
+    "microsoft":      "microsoft.com",
+    "google":         "google.com",
+    "facebook":       "facebook.com",
+    "instagram":      "instagram.com",
+    "linkedin":       "linkedin.com",
+    "dropbox":        "dropbox.com",
+    "spotify":        "spotify.com",
+    "chase":          "chase.com",
+    "wellsfargo":     "wellsfargo.com",
+    "ebay":           "ebay.com",
+}
+
+# Free / abused hosting platforms where brand-title impersonation is
+# especially dangerous — domains on these hosts are attacker-controlled.
+BRAND_TITLE_FREE_HOSTS: set[str] = {
+    "firebaseapp.com", "web.app", "vercel.app", "netlify.app",
+    "github.io", "pages.dev", "workers.dev", "glitch.me",
+    "repl.co", "ngrok.io", "onrender.com", "fly.dev",
+    "wixsite.com", "wix.com", "weebly.com", "squarespace.com",
+    "000webhostapp.com", "byethost.com", "infinityfree.net",
 }
 
 _INFRA_SENSITIVE_KEYWORDS: list[str] = [
@@ -169,6 +215,53 @@ PATH_BRANDS: list[str] = [
     "dropbox", "github", "spotify", "adobe", "yahoo",
     "chase", "wellsfargo", "bankofamerica", "ebay", "walmart",
 ]
+
+_FETCH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
+_FETCH_TIMEOUT = 3  # seconds — strict so the API never hangs
+
+
+def fetch_live_content(url: str) -> dict:
+    """
+    Attempt a live GET request and extract the page <title> via BeautifulSoup.
+
+    Returns:
+        {
+            "title":   str | None  — stripped <title> text, or None on failure,
+            "fetched": bool        — True if request succeeded,
+            "error":   str | None  — short exception description on failure,
+        }
+
+    All failure modes (no bs4, DNS error, timeout, HTTP 4xx/5xx, etc.) are
+    caught and returned as title=None so the caller always falls back to ML.
+    """
+    if not _BS4_AVAILABLE:
+        return {"title": None, "fetched": False, "error": "bs4 not installed"}
+
+    normalized = url if "://" in url else f"https://{url}"
+    try:
+        resp = requests.get(
+            normalized,
+            headers=_FETCH_HEADERS,
+            timeout=_FETCH_TIMEOUT,
+            allow_redirects=True,
+            stream=False,
+        )
+        resp.raise_for_status()
+        content = resp.content[:51200]  # cap at 50 KB — avoid hanging on huge pages
+        soup  = BeautifulSoup(content, "html.parser")
+        tag   = soup.find("title")
+        title = tag.get_text(strip=True) if tag else None
+        return {"title": title, "fetched": True, "error": None}
+    except Exception as exc:
+        logger.debug("fetch_live_content failed for %s: %s", url, exc)
+        return {"title": None, "fetched": False, "error": str(exc)[:120]}
 
 
 def _extract_domain(url: str) -> str:
@@ -797,6 +890,54 @@ def _analyse_url(url: str) -> dict:
             "security_analysis": "Bypassed via trusted domain whitelist",
         }
 
+    # ── Module L: Live HTML Title Fetch ──────────────────────────────────
+    # Performed early so the result can short-circuit the rest of the pipeline.
+    live_content = fetch_live_content(url)
+    _url_domain  = _extract_domain(url)
+
+    # Rule 0 — Brand Impersonation in Page Title (highest-priority override)
+    # Fires when: fetched title contains a TARGET_BRAND keyword AND the URL's
+    # domain is NOT the brand's official domain OR is hosted on a free host.
+    brand_title_impersonation: dict = {
+        "fired": False, "brand": None, "title": live_content["title"], "flag": None
+    }
+    if live_content["title"]:
+        title_lower = live_content["title"].lower()
+        for brand_kw, official_domain in TARGET_BRANDS.items():
+            if brand_kw in title_lower and _url_domain != official_domain:
+                _host_parts_l = _url_domain.split(".")
+                _etld1_l      = ".".join(_host_parts_l[-2:]) if len(_host_parts_l) >= 2 else _url_domain
+                on_free_host  = _etld1_l in BRAND_TITLE_FREE_HOSTS
+                flag_msg = (
+                    f"Brand Impersonation: Page title claims to be "
+                    f"'{live_content['title']}' (contains '{brand_kw}') "
+                    f"but domain '{_url_domain}' does not match official "
+                    f"'{official_domain}'"
+                    + (f" and is hosted on free platform '{_etld1_l}'" if on_free_host else "")
+                    + "."
+                )
+                brand_title_impersonation = {
+                    "fired":   True,
+                    "brand":   brand_kw.title(),
+                    "title":   live_content["title"],
+                    "flag":    flag_msg,
+                }
+                # Immediate return — no further analysis needed
+                return {
+                    "url":        url,
+                    "label":      1,
+                    "verdict":    "malicious",
+                    "confidence": 99.0,
+                    "reason":     flag_msg,
+                    "security_analysis": {
+                        "live_content":              live_content,
+                        "brand_title_impersonation": brand_title_impersonation,
+                        "threat_flags":              [flag_msg],
+                        "note": "Short-circuited at Rule 0 — brand impersonation in live page title.",
+                    },
+                }
+                break
+
     # ── Pre-screening ────────────────────────────────────────────────────
     encoded    = detect_encoded_payloads(url)
     entropy    = analyse_query_entropy(url)
@@ -1102,22 +1243,24 @@ def _analyse_url(url: str) -> dict:
         "confidence": round(confidence * 100, 2),
         "reason":     reason,
         "security_analysis": {
-            "encoded_payloads":       encoded,
-            "entropy_analysis":       entropy,
-            "vulnerability_patterns": vulns,
-            "typosquatting":          typo,
-            "suspicious_tld":         tld_check,
-            "url_complexity":         complexity,
-            "phishing_keywords":      keywords,
-            "threat_flags":           threat_flags,
-            "trust_override":         trust_override,
-            "ipfs_gateway":           ipfs,
-            "infrastructure_abuse":   _infra,
-            "brand_in_subdomain":     brand_sub,
-            "hyphenated_creds":       hyph_creds,
-            "abused_free_host":       {"flagged": abused_host_flag, "host": _etld1 if abused_host_flag else None},
-            "override_engine_fired":  _override_conf > 0.0,
-            "override_confidence":    round(_override_conf * 100, 2),
+            "live_content":              live_content,
+            "brand_title_impersonation": brand_title_impersonation,
+            "encoded_payloads":          encoded,
+            "entropy_analysis":          entropy,
+            "vulnerability_patterns":    vulns,
+            "typosquatting":             typo,
+            "suspicious_tld":            tld_check,
+            "url_complexity":            complexity,
+            "phishing_keywords":         keywords,
+            "threat_flags":              threat_flags,
+            "trust_override":            trust_override,
+            "ipfs_gateway":              ipfs,
+            "infrastructure_abuse":      _infra,
+            "brand_in_subdomain":        brand_sub,
+            "hyphenated_creds":          hyph_creds,
+            "abused_free_host":          {"flagged": abused_host_flag, "host": _etld1 if abused_host_flag else None},
+            "override_engine_fired":     _override_conf > 0.0,
+            "override_confidence":       round(_override_conf * 100, 2),
         },
     }
 

@@ -6,10 +6,15 @@ unified heuristic pipeline (Modules A-F) via a REST API.
 
 Endpoints:
     POST /predict   -- full prediction + security analysis
+    POST /report    -- submit a user correction for data feedback loop
     GET  /health    -- readiness probe
 """
 
-from typing import Any, List, Optional, Union
+import csv
+import os
+import threading
+from datetime import datetime, timezone
+from typing import Any, List, Literal, Optional, Union
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -166,6 +171,18 @@ class SecurityAnalysis(BaseModel):
     shortener_expansion:     Optional[Any]    = None
     infrastructure_abuse:    Optional[Any]    = None  # v3.5
 
+class ReportRequest(BaseModel):
+    url:             str
+    correct_verdict: Literal["benign", "malicious"]
+    comments:        Optional[str] = None
+
+
+# -- Report CSV path & write-lock ---------------------------------------------
+
+_REPORT_CSV  = os.path.join(os.path.dirname(__file__), "01_Datasets", "user_reported_corrections.csv")
+_REPORT_LOCK = threading.Lock()
+_REPORT_COLS = ["timestamp", "url", "correct_verdict", "comments"]
+
 # -- Endpoints ----------------------------------------------------------------
 
 @app.post("/predict", response_model=PredictionResponse)
@@ -200,6 +217,43 @@ def predict(request: Request, req: URLRequest):
 def health(request: Request):
     """Readiness / liveness probe. Rate limit: 60/min."""
     return {"status": "ok", "model": "Random Forest (AUC 0.9645)"}
+
+
+@app.post("/report", status_code=201)
+@limiter.limit("10/minute")
+def report(request: Request, req: ReportRequest):
+    """
+    Accept a user correction and append it to the feedback CSV.
+
+    Creates 01_Datasets/user_reported_corrections.csv with headers on
+    first write. Thread-safe via a module-level threading.Lock.
+    """
+    url = req.url.strip()
+    if not url:
+        raise HTTPException(status_code=422, detail="url must not be empty.")
+    if req.correct_verdict not in ("benign", "malicious"):
+        raise HTTPException(status_code=422, detail="correct_verdict must be 'benign' or 'malicious'.")
+
+    row = {
+        "timestamp":       datetime.now(timezone.utc).isoformat(),
+        "url":             url,
+        "correct_verdict": req.correct_verdict,
+        "comments":        (req.comments or "").strip(),
+    }
+
+    try:
+        with _REPORT_LOCK:
+            file_exists = os.path.isfile(_REPORT_CSV)
+            os.makedirs(os.path.dirname(_REPORT_CSV), exist_ok=True)
+            with open(_REPORT_CSV, "a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=_REPORT_COLS)
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerow(row)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to write report: {exc}") from exc
+
+    return {"status": "accepted", "message": "Thank you — your correction has been recorded.", "data": row}
 
 @app.get("/")
 def read_root():
