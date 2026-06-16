@@ -1,16 +1,3 @@
----
-title: Phishing Detection API
-emoji: 🛡️
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-pinned: false
----
-
-# PhishGuard MVP API
-This backend powers the Phishing Detection application.
-
-
 # PhishGuard MVP — v4.0.0
 
 AI-powered phishing URL detection combining a trained Random Forest classifier with a seven-rule deterministic Heuristic Override Engine and live HTML content analysis.

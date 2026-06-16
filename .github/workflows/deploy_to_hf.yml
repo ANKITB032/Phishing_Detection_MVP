@@ -1,0 +1,52 @@
+name: Deploy to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Inject Hugging Face YAML Frontmatter
+        run: |
+          # Create the required HF configuration block along with its header
+          cat << 'EOF' > hf_frontmatter.txt
+          ---
+          title: Phishing Detection API
+          emoji: 🛡️
+          colorFrom: blue
+          colorTo: indigo
+          sdk: docker
+          pinned: false
+          ---
+
+          # PhishGuard MVP API
+          This backend powers the Phishing Detection application.
+
+          EOF
+          
+          # Stitch the YAML and your clean README together
+          cat hf_frontmatter.txt README.md > README_DEPLOY.md
+          mv README_DEPLOY.md README.md
+          rm hf_frontmatter.txt
+
+      - name: Push to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action Bot"
+          
+          # Commit the injected README to the runner's temporary environment
+          git add README.md
+          git commit -m "chore: inject HF frontmatter for deployment"
+          
+          # Force push to Hugging Face using your secret token
+          git remote add hf https://ab2403:$HF_TOKEN@huggingface.co/spaces/ab2403/phishguard-api.git
+          git push hf main --force
