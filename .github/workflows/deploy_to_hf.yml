@@ -9,14 +9,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1 # Only grab the latest commit to save runner space
 
-      - name: Inject Hugging Face YAML Frontmatter
+      - name: Prepare Production Package
         run: |
-          # Create the required HF configuration block along with its header
-          cat << 'EOF' > hf_frontmatter.txt
+          # 1. Create an isolated deployment directory
+          mkdir ../deploy_dir
+          
+          # 2. Inject the YAML frontmatter directly into a fresh deployment README
+          cat << 'EOF' > ../deploy_dir/README.md
           ---
           title: Phishing Detection API
           emoji: 🛡️
@@ -31,22 +34,35 @@ jobs:
 
           EOF
           
-          # Stitch the YAML and your clean README together
-          cat hf_frontmatter.txt README.md > README_DEPLOY.md
-          mv README_DEPLOY.md README.md
-          rm hf_frontmatter.txt
+          # Append your clean local README content to the deployment README
+          cat README.md >> ../deploy_dir/README.md
+          
+          # 3. Copy ONLY the critical files required for your Space to build and execute
+          cp Dockerfile ../deploy_dir/
+          cp requirements.txt ../deploy_dir/
+          cp main.py ../deploy_dir/
+          cp predictor.py ../deploy_dir/
+          
+          # Copy your model directory structure
+          mkdir -p ../deploy_dir/04_Saved_Models
+          cp -r 04_Saved_Models/* ../deploy_dir/04_Saved_Models/
 
-      - name: Push to Hugging Face
+      - name: Push Single Commit to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git config --global user.email "action@github.com"
-          git config --global user.name "GitHub Action Bot"
+          # Navigate into our pristine deployment directory
+          cd ../deploy_dir
           
-          # Commit the injected README to the runner's temporary environment
-          git add README.md
-          git commit -m "chore: inject HF frontmatter for deployment"
+          # Initialize a completely fresh, history-free git repository
+          git init -b main
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action Bot"
           
-          # Force push to Hugging Face using your secret token
-          git remote add hf https://ab2403:$HF_TOKEN@huggingface.co/spaces/ab2403/phishguard-api.git
+          # Stage and commit only the production files
+          git add .
+          git commit -m "deploy: production release"
+          
+          # Force push this single, ultra-light commit to Hugging Face
+          git remote add hf https://user:$HF_TOKEN@huggingface.co/spaces/ab2403/phishguard-api.git
           git push hf main --force
