@@ -11,14 +11,13 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1 # Only grab the latest commit to save runner space
+          fetch-depth: 1
+          lfs: true # <--- FIX 1: Forces runner to download the actual 440MB binary model
 
       - name: Prepare Production Package
         run: |
-          # 1. Create an isolated deployment directory
           mkdir ../deploy_dir
           
-          # 2. Inject the YAML frontmatter directly into a fresh deployment README
           cat << 'EOF' > ../deploy_dir/README.md
           ---
           title: Phishing Detection API
@@ -34,16 +33,15 @@ jobs:
 
           EOF
           
-          # Append your clean local README content to the deployment README
           cat README.md >> ../deploy_dir/README.md
           
-          # 3. Copy ONLY the critical files required for your Space to build and execute
+          # Copy essential files
           cp Dockerfile ../deploy_dir/
           cp requirements.txt ../deploy_dir/
           cp main.py ../deploy_dir/
           cp predictor.py ../deploy_dir/
+          cp .gitattributes ../deploy_dir/ # <--- FIX 2: Tells HF this contains LFS files
           
-          # Copy your model directory structure
           mkdir -p ../deploy_dir/04_Saved_Models
           cp -r 04_Saved_Models/* ../deploy_dir/04_Saved_Models/
 
@@ -51,18 +49,14 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Navigate into our pristine deployment directory
           cd ../deploy_dir
           
-          # Initialize a completely fresh, history-free git repository
           git init -b main
           git config user.email "action@github.com"
           git config user.name "GitHub Action Bot"
           
-          # Stage and commit only the production files
           git add .
-          git commit -m "deploy: production release"
+          git commit -m "deploy: resolve LFS pointer bug and add bs4"
           
-          # Force push this single, ultra-light commit to Hugging Face
           git remote add hf https://user:$HF_TOKEN@huggingface.co/spaces/ab2403/phishguard-api.git
           git push hf main --force
