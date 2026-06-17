@@ -93,6 +93,10 @@ TRUSTED_DOMAINS: set[str] = {
     "coursera.org",     "edx.org",          "khanacademy.org",
     # Personal / portfolio
     "ankitband.me",
+    # Regional variants — prevent false positives on ccTLD domains
+    "google.co.uk",   "google.com.au",  "google.co.in",
+    "amazon.co.uk",   "amazon.com.au",  "amazon.co.in",
+    "bbc.co.uk",      "microsoft.co.uk",
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -146,6 +150,7 @@ _INFRA_SENSITIVE_KEYWORDS: list[str] = [
     "verify", "service", "secure", "login", "account", "update",
     "confirm", "support", "billing", "payment", "auth", "signin",
     "password", "recover", "unlock", "validate", "alert", "admin",
+    "clone", "wallet", "bridge", "swap", "ledger",
 ]
 
 _SUBDOMAIN_ENTROPY_THRESHOLD = 3.5
@@ -370,6 +375,13 @@ def detect_typosquatting(url: str) -> dict:
         }
     """
     domain = _extract_domain(url)
+    # If the full hostname belongs to the trusted whitelist, it is a legitimate
+    # regional or subdomain of a known brand — never a typosquat.
+    normalized = url if "://" in url else f"https://{url}"
+    _full_host = (urlparse(normalized).hostname or "").lower().rstrip(".")
+    if _full_host in TRUSTED_DOMAINS or _extract_domain(url) in TRUSTED_DOMAINS:
+        return {"is_typosquat": False, "matched_brand": None, "edit_distance": None}
+
     # Strip TLD to compare just the brand-name portion (e.g. "amaz0n")
     domain_label = domain.split(".")[0].lower()
 
@@ -602,6 +614,8 @@ SUSPICIOUS_TLDS: set[str] = {
     # Extended — confirmed phishing abuse (HFN analysis 2026-05-19)
     ".tech", ".live", ".online", ".site", ".space", ".fun",
     ".click", ".link", ".pw", ".cc", ".ws",
+    # Additional high-abuse TLDs (2026-06-17)
+    ".cfd", ".ru", ".cn", ".vip", ".id", ".et",
 }
 
 # Free / abused hosting platforms where any subdomain is attacker-controlled.
@@ -615,6 +629,9 @@ ABUSED_FREE_HOSTS: set[str] = {
     "firebaseapp.com", "web.app", "vercel.app", "netlify.app",
     "github.io", "pages.dev", "workers.dev", "glitch.me",
     "repl.co", "onrender.com", "fly.dev", "ngrok.io",
+    # Extended — web builder / CMS platforms abused for phishing (2026-06-17)
+    "wixstudio.com", "webflow.io", "blogspot.com", "weebly.com",
+    "wix.com", "hostingersite.com",
 }
 
 # Regex: hyphenated credential / brand-impersonation patterns in hostname labels
@@ -650,6 +667,11 @@ def brand_in_subdomain(url: str) -> dict:
     hostname   = (urlparse(normalized).hostname or "").lower().rstrip(".")
     parts      = hostname.split(".")
     etld1      = ".".join(parts[-2:]) if len(parts) >= 2 else hostname
+
+    # If the full hostname is trusted, it is a legitimate regional/subdomain —
+    # not an attacker planting a brand label on an untrusted host.
+    if hostname in TRUSTED_DOMAINS or etld1 in TRUSTED_DOMAINS:
+        return {"found": False, "brand": None, "host_domain": etld1}
 
     if len(parts) < 3:
         return {"found": False, "brand": None, "host_domain": etld1}
@@ -930,7 +952,9 @@ def _analyse_url(url: str) -> dict:
     if live_content["title"]:
         title_lower = live_content["title"].lower()
         for brand_kw, official_domain in TARGET_BRANDS.items():
-            if brand_kw in title_lower and _url_domain != official_domain:
+            _url_sld = _url_domain.split(".")[0]
+            _official_sld = official_domain.split(".")[0]
+            if brand_kw in title_lower and _url_sld != _official_sld:
                 _host_parts_l = _url_domain.split(".")
                 _etld1_l      = ".".join(_host_parts_l[-2:]) if len(_host_parts_l) >= 2 else _url_domain
                 on_free_host  = _etld1_l in BRAND_TITLE_FREE_HOSTS
@@ -1060,6 +1084,12 @@ def _analyse_url(url: str) -> dict:
         confidence = max(confidence, 0.80)
         if "Raw IP host detected" not in threat_flags:
             threat_flags.append("Raw IP host detected — legitimate services don't use bare IP addresses")
+
+    # Suspicious TLD hard override — bypasses trust_override gate
+    if tld_check["flagged"]:
+        label = 1
+        trust_override = False
+        confidence = max(confidence, 0.76)
 
     # ══════════════════════════════════════════════════════════════════════
     #  HEURISTIC OVERRIDE ENGINE  (v3.5 FN hotfix — 2026-05-19)
