@@ -20,6 +20,7 @@ import os
 import logging
 import pandas as pd
 import requests
+import tldextract
 from urllib.parse import urlparse, parse_qs
 
 # ── Optional: beautifulsoup4 for live HTML title extraction ──────────────────
@@ -268,22 +269,21 @@ def _extract_domain(url: str) -> str:
     """
     Extract the registrable domain (eTLD+1) from a URL.
 
-    Examples:
-        https://mail.google.com/inbox  →  google.com
-        http://docs.github.com:8080    →  github.com
-        github.com/user/repo           →  github.com
-    """
-    # Ensure the URL has a scheme so urlparse doesn't treat it as a path
-    normalized = url if "://" in url else f"https://{url}"
-    hostname = urlparse(normalized).hostname or ""
-    hostname = hostname.lower().rstrip(".")
+    Uses tldextract for accurate parsing of multi-part TLDs (e.g. .co.uk,
+    .com.au) — the previous naive split(".")[-2:] approach incorrectly
+    returned 'co.uk' instead of 'example.co.uk' for such domains.
 
-    # Walk back to the registrable domain (last two labels, or last three
-    # for two-part TLDs like .co.uk — MVP simplification).
-    parts = hostname.split(".")
-    if len(parts) >= 2:
-        return ".".join(parts[-2:])
-    return hostname
+    Examples:
+        https://mail.google.com/inbox    →  google.com
+        http://docs.github.com:8080      →  github.com
+        https://bbc.co.uk/news           →  bbc.co.uk
+        http://192.168.1.1/admin         →  192.168.1.1  (IPv4 fallback)
+        github.com/user/repo             →  github.com
+    """
+    extracted = tldextract.extract(url)
+    # registered_domain = SLD + TLD (e.g. "google.com", "bbc.co.uk")
+    # Fall back to ipv4 for bare-IP URLs, then to the raw host label.
+    return extracted.registered_domain or extracted.ipv4 or extracted.host
 
 
 def is_trusted_domain(url: str) -> bool:
@@ -392,7 +392,34 @@ def detect_typosquatting(url: str) -> dict:
     return {"is_typosquat": False, "matched_brand": None, "edit_distance": None}
 
 def extract_features(url: str) -> pd.DataFrame:
-    """Extract the 10 ML features from a raw URL string."""
+    """
+    Extract ML features from a raw URL string.
+
+    All hostname/path/query values are derived from urllib.parse.urlparse so
+    the logic matches the feature engineering used during training and avoids
+    the raw url.split('/')[0] skew that caused is_ip, subdomain_depth, and
+    path_brand to be calculated on the wrong URL segment in production.
+    """
+    # Normalise: ensure a scheme is present so urlparse works correctly
+    normalized = url if "://" in url else f"https://{url}"
+    parsed     = urlparse(normalized)
+    hostname   = (parsed.hostname or "").lower().rstrip(".")
+    path       = parsed.path
+    query      = parsed.query
+
+    # subdomain_depth: number of labels beyond the registrable domain (eTLD+1)
+    # e.g. mail.google.com → depth 1;  a.b.evil.co.uk → depth 2
+    host_labels     = hostname.split(".") if hostname else []
+    subdomain_depth = max(0, len(host_labels) - 2)
+
+    # is_ip: True when the hostname is a bare IPv4 address
+    _IP_RE  = re.compile(r"^(\d{1,3}\.){3}\d{1,3}$")
+    is_ip   = int(bool(_IP_RE.match(hostname)))
+
+    # path_brand: brand keyword found anywhere in path or query
+    path_and_query = (path + "?" + query).lower() if query else path.lower()
+    path_brand     = int(any(b in path_and_query for b in PATH_BRANDS))
+
     feats = {
         "url_length":        len(url),
         "num_special_chars": sum(url.count(c) for c in SPECIAL_CHARS),
@@ -400,15 +427,14 @@ def extract_features(url: str) -> pd.DataFrame:
         "num_hyphens":       url.count("-"),
         "num_at":            url.count("@"),
         "num_query_params":  url.count("?") + url.count("&"),
-        "has_https":         int(url.startswith("https")),
-        "has_ip":            int(bool(re.search(r"(\d{1,3}\.){3}\d{1,3}", url))),
-        "subdomain_depth":   max(0, len(url.split("/")[0].split(".")) - 2),
-        "path_depth":        url.count("/"),
-        "is_ip":       int(bool(re.search(r"(\d{1,3}\.){3}\d{1,3}", url.split("/")[0]))),
-        "path_brand":  int(any(b in url.split("/", 3)[-1].lower() for b in PATH_BRANDS)),
+        "has_https":         int(parsed.scheme == "https"),
+        "subdomain_depth":   subdomain_depth,
+        "path_depth":        len([s for s in path.split("/") if s]),
+        "is_ip":             is_ip,
+        "path_brand":        path_brand,
         # v3.5 FN patch
-        "url_in_query": int(bool(_URL_IN_QUERY_RE.search(urlparse(url if "://" in url else f"https://{url}").query))),
-        "tld_risk":     _TLD_RISK.get("." + (urlparse(url if "://" in url else f"https://{url}").hostname or "").split(".")[-1].lower(), 0),
+        "url_in_query": int(bool(_URL_IN_QUERY_RE.search(query))),
+        "tld_risk":     _TLD_RISK.get("." + hostname.split(".")[-1] if hostname else "", 0),
     }
     return pd.DataFrame([feats])[FEATURES]
 
@@ -1284,9 +1310,9 @@ def predict_url(url: str) -> dict:
         # Cap shortener confidence at 70 %
         if result["confidence"] > 70.0:
             result["confidence"] = 70.0
-        # Force malicious if destination was also flagged
-        if result["label"] == 0:
-            result["label"] = 1
+        # Force malicious only when the expanded destination was flagged malicious.
+        # Previously used label == 0 which incorrectly flipped benign destinations.
+        if result["label"] == 1:
             result["verdict"] = "malicious"
             result["confidence"] = max(result["confidence"], 65.0)
 
