@@ -68,7 +68,6 @@ PATH_BRANDS: list[str] = [
 ]
 
 _IP_RE     = re.compile(r"^(\d{1,3}\.){3}\d{1,3}$")
-_IP_IN_URL = re.compile(r"(\d{1,3}\.){3}\d{1,3}")
 
 # Detects a second embedded URL in the query string (open redirect bait).
 # e.g. ?ref=http://legit.com/login  or  ?next=//evil.com
@@ -86,6 +85,9 @@ _TLD_RISK: dict[str, int] = {
     ".top": 2, ".xyz": 2, ".tk": 2, ".ml": 2, ".ga": 2,
     ".cf": 2, ".gq": 2, ".buzz": 2, ".club": 2, ".work": 2,
     ".icu": 2, ".cam": 2, ".rest": 2, ".surf": 2, ".monster": 2, ".sbs": 2,
+    # synced from predictor.py SUSPICIOUS_TLDS additions (2026-06-17/18)
+    ".cfd": 2, ".ru": 2, ".cn": 2, ".vip": 2, ".id": 2, ".et": 2,
+    ".cyou": 2, ".shop": 2,
 }
 
 
@@ -110,42 +112,42 @@ def extract_features(url: str) -> dict:
                        Directly encodes .info (rank 2 FN) and the SUSPICIOUS_TLDS
                        blocklist already used by predictor.py heuristics.
     """
-    try:
-        parsed   = urlparse(url if "://" in url else f"https://{url}")
-        hostname = (parsed.hostname or "").lower()
-        path     = (parsed.path or "").lower()
-        query    = (parsed.query or "").lower()
-    except Exception:
-        hostname = path = query = ""
+    # Normalise: ensure a scheme is present so urlparse works correctly.
+    # Matches predictor.py exactly — same logic, no raw-string splits.
+    normalized = url if "://" in url else f"https://{url}"
+    parsed     = urlparse(normalized)
+    hostname   = (parsed.hostname or "").lower().rstrip(".")
+    path       = parsed.path
+    query      = parsed.query
 
-    is_ip      = bool(_IP_RE.match(hostname)) or bool(_IP_IN_URL.search(hostname))
-    path_lower = path + "/" + query
-    path_brand = any(brand in path_lower for brand in PATH_BRANDS)
+    # subdomain_depth: labels beyond eTLD+1 (e.g. mail.google.com → 1)
+    host_labels     = hostname.split(".") if hostname else []
+    subdomain_depth = max(0, len(host_labels) - 2)
 
-    # url_in_query: open redirect / URL embedding in query string
-    url_in_query = bool(_URL_IN_QUERY_RE.search(query))
+    # is_ip: bare IPv4 hostname only (matches predictor.py _IP_RE usage)
+    is_ip = int(bool(_IP_RE.match(hostname)))
 
-    # tld_risk: look up the last label of the hostname
-    tld = "." + hostname.split(".")[-1] if "." in hostname else ""
-    tld_risk = _TLD_RISK.get(tld, 0)
+    # path_brand: brand keyword in path or query
+    path_and_query = (path + "?" + query).lower() if query else path.lower()
+    path_brand     = int(any(b in path_and_query for b in PATH_BRANDS))
 
     return {
-        # ── Structural (v3.0) ──────────────────────────────────────────────
+        # ── Structural (v3.0) ──────────────────────────────────────────────────────
         "url_length":        len(url),
         "num_special_chars": sum(url.count(c) for c in SPECIAL_CHARS),
         "num_dots":          url.count("."),
         "num_hyphens":       url.count("-"),
         "num_at":            url.count("@"),
         "num_query_params":  url.count("?") + url.count("&"),
-        "has_https":         int(url.startswith("https")),
-        "subdomain_depth":   max(0, len(hostname.split(".")) - 2),
-        "path_depth":        url.count("/"),
-        # ── v3.5 original ─────────────────────────────────────────────────
-        "is_ip":             int(is_ip),
-        "path_brand":        int(path_brand),
-        # ── v3.5 FN patch ─────────────────────────────────────────────────
-        "url_in_query":      int(url_in_query),
-        "tld_risk":          tld_risk,
+        "has_https":         int(parsed.scheme == "https"),
+        "subdomain_depth":   subdomain_depth,
+        "path_depth":        len([s for s in path.split("/") if s]),
+        # ── v3.5 original ──────────────────────────────────────────────────────────────
+        "is_ip":             is_ip,
+        "path_brand":        path_brand,
+        # ── v3.5 FN patch ──────────────────────────────────────────────────────────────
+        "url_in_query":      int(bool(_URL_IN_QUERY_RE.search(query))),
+        "tld_risk":          _TLD_RISK.get("." + hostname.split(".")[-1] if hostname else "", 0),
     }
 
 

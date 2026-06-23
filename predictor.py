@@ -292,7 +292,24 @@ def _extract_domain(url: str) -> str:
 
 
 def is_trusted_domain(url: str) -> bool:
-    """Return True if the URL's domain belongs to the trusted whitelist."""
+    """
+    Return True if the URL's domain belongs to the trusted whitelist.
+
+    Special carve-out: sites.google.com and any *.google.com/view/* URL are
+    attacker-controlled Google Sites pages — they must NOT be trusted even
+    though google.com is on the whitelist.
+    """
+    normalized = url if "://" in url else f"https://{url}"
+    parsed     = urlparse(normalized)
+    hostname   = (parsed.hostname or "").lower().rstrip(".")
+    path       = parsed.path.lower()
+
+    # Carve out Google Sites — user-generated content on google.com infra
+    if hostname == "sites.google.com":
+        return False
+    if hostname.endswith(".google.com") and path.startswith("/view/"):
+        return False
+
     return _extract_domain(url) in TRUSTED_DOMAINS
 
 # ── FN Patch constants (v3.5 error-analysis) ─────────────────────────────────
@@ -302,6 +319,9 @@ _URL_IN_QUERY_RE = re.compile(
     r"(https?://|//|www\.)[a-z0-9\-]+\.[a-z]{2,}",
     re.IGNORECASE,
 )
+
+# Matches a bare IPv4 address hostname (e.g. 192.168.1.1)
+_IP_RE = re.compile(r"^(\d{1,3}\.){3}\d{1,3}$")
 
 # TLD ordinal risk score: 0=low, 1=medium-risk, 2=high-abuse
 _TLD_RISK: dict[str, int] = {
@@ -340,6 +360,7 @@ BRAND_MAP: dict[str, str] = {
     "bankofamerica": "bankofamerica.com",
     "ebay":        "ebay.com",
     "walmart":     "walmart.com",
+    "icloud":      "apple.com",
 }
 
 
@@ -425,8 +446,7 @@ def extract_features(url: str) -> pd.DataFrame:
     subdomain_depth = max(0, len(host_labels) - 2)
 
     # is_ip: True when the hostname is a bare IPv4 address
-    _IP_RE  = re.compile(r"^(\d{1,3}\.){3}\d{1,3}$")
-    is_ip   = int(bool(_IP_RE.match(hostname)))
+    is_ip = int(bool(_IP_RE.match(hostname)))
 
     # path_brand: brand keyword found anywhere in path or query
     path_and_query = (path + "?" + query).lower() if query else path.lower()
@@ -616,6 +636,8 @@ SUSPICIOUS_TLDS: set[str] = {
     ".click", ".link", ".pw", ".cc", ".ws",
     # Additional high-abuse TLDs (2026-06-17)
     ".cfd", ".ru", ".cn", ".vip", ".id", ".et",
+    # Further additions (2026-06-18)
+    ".cyou", ".shop",
 }
 
 # Free / abused hosting platforms where any subdomain is attacker-controlled.
@@ -632,6 +654,11 @@ ABUSED_FREE_HOSTS: set[str] = {
     # Extended — web builder / CMS platforms abused for phishing (2026-06-17)
     "wixstudio.com", "webflow.io", "blogspot.com", "weebly.com",
     "wix.com", "hostingersite.com",
+    # No-code / automation platforms abused for phishing (2026-06-17)
+    "godaddysites.com", "zapier.app",
+    # Cloud / PaaS platforms abused for phishing (2026-06-18)
+    "gitbook.io", "railway.app", "azurewebsites.net", "edgeone.app",
+    "edgeone.cool", "edgeone.dev", "wasmer.app", "replit.app",
 }
 
 # Regex: hyphenated credential / brand-impersonation patterns in hostname labels
@@ -1042,6 +1069,20 @@ def _analyse_url(url: str) -> dict:
             f"Abused free host: subdomain on '{_etld1}' — attacker-controlled hosting."
         )
 
+    # github.io brand-in-path check — user controls path, not the domain label
+    # Fires when: eTLD+1 is github.io AND path contains a known brand AND
+    # the full hostname (user subdomain) is not itself in TRUSTED_DOMAINS.
+    _github_io_flag = False
+    if _etld1 == "github.io" and _norm_host not in TRUSTED_DOMAINS:
+        _parsed_path = urlparse(url if "://" in url else f"https://{url}").path.lower()
+        _github_brand_hit = next((b for b in PATH_BRANDS if b in _parsed_path), None)
+        if _github_brand_hit:
+            _github_io_flag = True
+            threat_flags.append(
+                f"github.io brand impersonation: path contains '{_github_brand_hit}' "
+                f"on attacker-controlled subdomain '{_norm_host}'."
+            )
+
     # ── ML Inference ─────────────────────────────────────────────────────
     X = extract_features(url)
     label      = int(_model.predict(X)[0])
@@ -1058,6 +1099,7 @@ def _analyse_url(url: str) -> dict:
         brand_sub["found"],                            # G — Brand-in-subdomain
         hyph_creds["found"],                           # H — Hyphenated creds
         abused_host_flag,                              # I — Abused free host
+        _github_io_flag,                               # J — github.io brand-in-path
     ])
 
     # ── Trust Protocol: ML-malicious but zero heuristic flags → benign ──
@@ -1159,6 +1201,15 @@ def _analyse_url(url: str) -> dict:
         _override_reasons.append(
             f"Credential-harvesting keywords ({kw_list}) combined with "
             f"{len(threat_flags) - 1} additional threat signal(s)."
+        )
+
+    # Rule 8 — github.io brand impersonation via path
+    if _github_io_flag:
+        _override_conf = max(_override_conf, 0.87)
+        _override_reasons.append(
+            f"github.io Brand Impersonation: path contains brand keyword "
+            f"'{_github_brand_hit}' on attacker-controlled subdomain '{_norm_host}' — "
+            f"a known phishing delivery vector abusing GitHub's trusted domain."
         )
 
     # Apply override: flip any ML-benign prediction when engine fires
