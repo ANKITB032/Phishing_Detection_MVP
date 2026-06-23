@@ -287,9 +287,10 @@ def _extract_domain(url: str) -> str:
         github.com/user/repo             →  github.com
     """
     extracted = tldextract.extract(url)
-    # registered_domain = SLD + TLD (e.g. "google.com", "bbc.co.uk")
+    # top_domain_under_public_suffix = SLD + TLD (e.g. "google.com", "bbc.co.uk")
+    # registered_domain is deprecated in tldextract v5 — use the new name.
     # Fall back to ipv4 for bare-IP URLs, then to the raw host label.
-    return extracted.registered_domain or extracted.ipv4 or extracted.host
+    return extracted.top_domain_under_public_suffix or extracted.ipv4 or extracted.host
 
 
 def is_trusted_domain(url: str) -> bool:
