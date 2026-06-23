@@ -84,7 +84,8 @@ TRUSTED_DOMAINS: set[str] = {
     "cloudflare.com",   "godaddy.com",      "namecheap.com",
     "letsencrypt.org",  "digicert.com",
     # Hosting & deploy (root domains — subdomain abuse handled by infra patch)
-    "vercel.app",       "github.io",
+    # github.io removed: Rule 8 brand-in-path check requires it to reach _analyse_url()
+    "vercel.app",
     # Email & comms
     "outlook.com",      "proton.me",        "whatsapp.com",
     # News / reference
@@ -416,6 +417,11 @@ def detect_typosquatting(url: str) -> dict:
             }
         # Exact brand name but wrong TLD (e.g. microsoft.xyz)
         if dist == 0 and domain != official:
+            # Skip if the registered domain is itself a free/abused hosting
+            # platform — e.g. github.io: the SLD "github" matching the brand
+            # "github" is expected, not a typosquat.
+            if domain in FREE_HOSTING_PROVIDERS or domain in ABUSED_FREE_HOSTS:
+                continue
             return {
                 "is_typosquat":  True,
                 "matched_brand": brand.title(),
@@ -1027,11 +1033,18 @@ def _analyse_url(url: str) -> dict:
     brand_sub  = brand_in_subdomain(url)
     hyph_creds = check_hyphenated_creds(url)
 
-    # Abused free-host check (unconditional — no keyword/entropy requirement)
+    # Abused free-host check — fires only for platforms NOT in FREE_HOSTING_PROVIDERS.
+    # Hosts in FREE_HOSTING_PROVIDERS already go through the keyword+entropy gate in
+    # check_infrastructure_abuse(), so unconditionally flagging them here would
+    # double-penalise innocent pages like myportfolio.github.io.
     _norm_host  = (urlparse(url if "://" in url else f"https://{url}").hostname or "").lower().rstrip(".")
     _host_parts = _norm_host.split(".")
     _etld1      = ".".join(_host_parts[-2:]) if len(_host_parts) >= 2 else _norm_host
-    abused_host_flag = len(_host_parts) > 2 and _etld1 in ABUSED_FREE_HOSTS
+    abused_host_flag = (
+        len(_host_parts) > 2
+        and _etld1 in ABUSED_FREE_HOSTS
+        and _etld1 not in FREE_HOSTING_PROVIDERS
+    )
 
     threat_flags = []
     if encoded["base64_found"]:
@@ -1072,6 +1085,7 @@ def _analyse_url(url: str) -> dict:
     # github.io brand-in-path check — user controls path, not the domain label
     # Fires when: eTLD+1 is github.io AND path contains a known brand AND
     # the full hostname (user subdomain) is not itself in TRUSTED_DOMAINS.
+    _github_brand_hit = None
     _github_io_flag = False
     if _etld1 == "github.io" and _norm_host not in TRUSTED_DOMAINS:
         _parsed_path = urlparse(url if "://" in url else f"https://{url}").path.lower()
