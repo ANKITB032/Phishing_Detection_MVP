@@ -115,10 +115,15 @@ def extract_features(url: str) -> dict:
     # Normalise: ensure a scheme is present so urlparse works correctly.
     # Matches predictor.py exactly — same logic, no raw-string splits.
     normalized = url if "://" in url else f"https://{url}"
-    parsed     = urlparse(normalized)
-    hostname   = (parsed.hostname or "").lower().rstrip(".")
-    path       = parsed.path
-    query      = parsed.query
+    try:
+        parsed   = urlparse(normalized)
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+        path     = parsed.path
+        query    = parsed.query
+    except ValueError:
+        # Invalid URL (e.g. malformed IPv6) — return safe zero-feature defaults.
+        parsed   = type("_P", (), {"scheme": ""})()
+        hostname = path = query = ""
 
     # subdomain_depth: labels beyond eTLD+1 (e.g. mail.google.com → 1)
     host_labels     = hostname.split(".") if hostname else []
