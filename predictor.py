@@ -231,7 +231,7 @@ _FETCH_HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
 }
-_FETCH_TIMEOUT = 3  # seconds — strict so the API never hangs
+_FETCH_TIMEOUT = (1, 2)  # (connect_timeout=1s, read_timeout=2s) — strict so the API never hangs
 
 
 def fetch_live_content(url: str) -> dict:
